@@ -119,6 +119,19 @@ and after allocating/freeing guest memory, including macOS's reclaim log.
   updates the Ubuntu integrations without invoking the Omarchy installer or
   replacing the Mac's helpers.
 
+For an existing Ubuntu VM, change the optional battery/camera settings through
+the installer while the VM is shut down (do not edit its feature record):
+
+```bash
+app/scripts/update-vm.sh "$HOME/UbuntuVMs/Ubuntu" --no-mac \
+  --feature battery=on --feature camera=on
+```
+
+Use `off` to remove either guest device and stop its host relay next start.
+For a running VM, `app/scripts/apply-vm.sh VM_DIR --no-mac --feature …` uses
+the same route. Both keep the host feature record and guest environment in
+sync; other Omarchy feature switches remain unavailable on Ubuntu.
+
 Omanotch and Omarchy's shell/theme migration are omitted. Full screen uses
 the area below the notch. GNOME gesture forwarding, Touch ID, Mac IME,
 Finder drops, HDR and invisible-window DPMS still need separate ports and
@@ -165,3 +178,6 @@ Additional Ubuntu integration validation:
 - Guest checks and media/audio regression tests passed. Camera capture,
   physical multi-display layouts and visible cursor behavior still require
   interactive testing with the person's permissions and displays.
+
+The Ubuntu device off/on cycle was also verified against both the guest
+devices and the persisted host/guest feature settings.

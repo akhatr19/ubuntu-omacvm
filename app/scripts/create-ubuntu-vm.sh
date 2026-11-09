@@ -61,7 +61,7 @@ wait_ssh 300 || die "Ubuntu did not answer SSH; inspect $LOG/ubuntu-system-conso
 touch "$VM_DIR/ubuntu-installed"
 COPYFILE_DISABLE=1 tar --no-xattrs -C "$OMACVM_SRC" -czf - . |
   vssh "mkdir -p /usr/local/share/omacvm; tar --no-same-owner -xzf - -C /usr/local/share/omacvm"
-vssh "bash /usr/local/share/omacvm/ubuntu/guest/install.sh '$VM_USER'" |
+vssh "bash /usr/local/share/omacvm/ubuntu/guest/install.sh '$VM_USER' '$FEATURES' '$NAME'" |
   tee "$LOG/ubuntu-guest-install.log"
 echo 'STEP 4/4 Shutting down the finished VM'
 vssh "systemctl poweroff" || true
@@ -69,6 +69,8 @@ qemu_wait_exit 120 || die "Ubuntu did not shut down"
 printf 'ubuntu\n' > "$VM_DIR/guest-os"
 printf 'vulkan\n' > "$VM_DIR/graphics"
 printf '%s\n' "$FEATURES" > "$VM_DIR/features"
+sed '/^FEATURES=/d' "$VM_DIR/vm.env" > "$VM_DIR/vm.env.new"
+mv "$VM_DIR/vm.env.new" "$VM_DIR/vm.env"
 printf 'av1\n' > "$VM_DIR/video-decode"
 cp "$OMACVM_SRC/VERSION" "$VM_DIR/omacvm-version"
 touch "$VM_DIR/venus-ready" "$VM_DIR/guest-pointer" "$VM_DIR/ready"

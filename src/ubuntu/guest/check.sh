@@ -21,8 +21,9 @@ for name in clipboard displays media audio-latency; do
 done
 check "audio latency utility" command -v pactl
 check "shared folder service" systemctl is-enabled --quiet omacvm-mac-folder
-check "battery module" test -d /sys/module/omacvm_battery
-check "camera device" test -c /dev/video42
+source /etc/omacvm/env
+[[ ${OMACVM_FEATURE_battery:-off} != on ]] || check "battery module" test -d /sys/module/omacvm_battery
+[[ ${OMACVM_FEATURE_camera:-off} != on ]] || check "camera device" test -c /dev/video42
 check "WebGPU launcher" test -x /usr/local/bin/omacvm-browser-webgpu
 echo "Browser WebGPU dispatch and decoded playback require separate runtime tests; launchers alone do not verify them."
 exit "$((fails != 0))"

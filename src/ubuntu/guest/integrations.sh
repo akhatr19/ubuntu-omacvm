@@ -43,5 +43,6 @@ if [[ -d /run/user/$(id -u "$U") ]]; then
     systemctl --user daemon-reload
 fi
 
-"$R/battery/guest/install.sh" on
-"$R/camera/guest/install.sh" "$U" app on
+source /etc/omacvm/env
+"$R/battery/guest/install.sh" "${OMACVM_FEATURE_battery:-off}"
+"$R/camera/guest/install.sh" "$U" app "${OMACVM_FEATURE_camera:-off}"
