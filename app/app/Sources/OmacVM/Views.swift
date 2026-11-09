@@ -110,7 +110,7 @@ final class AppState: ObservableObject {
         if let w = creator.warning {
             say(w)
         } else if updated, let v = config.guestVersion {
-            tell("OmacVM in \(config.name) is now \(v).")
+            tell("\(Product.name) in \(config.name) is now \(v).")
         } else {
             message = nil
         }

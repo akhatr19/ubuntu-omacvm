@@ -88,6 +88,9 @@ mac_helper_state() {
     Omanotch) key=omanotch bundle=Omanotch.app ;;
     *) MH_STATE=missing MH_DETAIL="unknown helper"; return 0 ;;
   esac
+  if [[ $key == gestures && -d $HOME/Applications/UbuntuVMGestures.app && ! -d $HOME/Applications/$bundle ]]; then
+    bundle=UbuntuVMGestures.app
+  fi
   if [[ $key == omanotch ]]; then
     pid=$(LC_ALL=C pgrep -a -o -u "$(id -u)" -f "Omanotch\.app/Contents/MacOS/omanotch") || pid=""
     omanotch_serves_app || rc=$?

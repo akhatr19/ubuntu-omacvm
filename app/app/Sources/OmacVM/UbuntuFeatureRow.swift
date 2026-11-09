@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import SwiftUI
 
 /// Ubuntu features use its own installer; enabling gestures explicitly installs its Mac helper.
@@ -18,6 +18,22 @@ struct UbuntuFeatureRow: View {
             Button(on ? "Disable" : feature == "gestures" ? "Install Helper and Enable…" : "Enable") { change() }
                 .disabled(busy || state.vmRunning())
         }
+        if feature == "gestures" {
+            SettingRow(title: "Gestures helper", subtitle: "UbuntuVM Gestures needs Accessibility and Input Monitoring.", probe: "ubuntu-gesture-permissions") {
+                Button("Show Helper") {
+                    let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+                    let choices = [home.appendingPathComponent("UbuntuVMGestures.app"), home.appendingPathComponent("OmacVMGestures.app")]
+                    if let helper = choices.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+                        NSWorkspace.shared.activateFileViewerSelecting([helper])
+                    } else { error = "Install the gestures helper first." }
+                }
+                Menu("Permissions") {
+                    Button("Accessibility…") { privacy("Privacy_Accessibility") }
+                    Button("Input Monitoring…") { privacy("Privacy_ListenEvent") }
+                    Button("Install / Repair Helper…") { installGestures() }.disabled(busy || state.vmRunning())
+                }
+            }
+        }
     }
 
     private func change() {
@@ -26,6 +42,14 @@ struct UbuntuFeatureRow: View {
             state.updateVM(features: ["\(feature)=\(enable ? "on" : "off")"])
             return
         }
+        installGestures()
+    }
+
+    private func privacy(_ pane: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") { NSWorkspace.shared.open(url) }
+    }
+
+    private func installGestures() {
         busy = true
         error = nil
         let script = Paths.scripts.appendingPathComponent("install-ubuntu-gestures.sh").path

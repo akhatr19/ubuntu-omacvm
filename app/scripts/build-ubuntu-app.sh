@@ -31,6 +31,9 @@ ID=${OMACVM_UBUNTU_BUNDLE_ID:-org.omacvm.ubuntu}
 [[ $ID == org.omacvm.ubuntu || $ID == org.omacvm.ubuntu.* ]] || exit 2
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $ID" "$C/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleName UbuntuVM' "$C/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName UbuntuVM' "$C/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :NSLocalNetworkUsageDescription UbuntuVM connects Ubuntu to the network. Optional LAN SSH and port forwards let other devices reach the services you publish." "$C/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :NSBluetoothAlwaysUsageDescription UbuntuVM optional integrations access Bluetooth only when you enable them." "$C/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :OmacVMCommit $COMMIT" "$C/Info.plist"
 mkdir "$T/UbuntuVM.iconset"
 for n in 16 32 128 256 512; do
@@ -38,6 +41,12 @@ for n in 16 32 128 256 512; do
   sips -s format png -z "$((n * 2))" "$((n * 2))" "$R/app/app/UbuntuVM.svg" --out "$T/UbuntuVM.iconset/icon_${n}x${n}@2x.png" >/dev/null
 done
 iconutil -c icns "$T/UbuntuVM.iconset" -o "$C/Resources/OmacVM.icns"
+HELPER=$C/Helpers/OmacVMGestures.app
+/usr/libexec/PlistBuddy -c 'Set :CFBundleName UbuntuVM Gestures' "$HELPER/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :CFBundleDisplayName string UbuntuVM Gestures' "$HELPER/Contents/Info.plist" 2>/dev/null ||
+  /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName UbuntuVM Gestures' "$HELPER/Contents/Info.plist"
+cp "$C/Resources/OmacVM.icns" "$HELPER/Contents/Resources/OmacVM.icns"
+"$R/src/lib/sign.sh" "$HELPER" org.omacvm.gestures
 "$R/app/scripts/sign-app.sh" "$APP" "$ID"
 mkdir -p "$(dirname "$OUT")"
 mv "$APP" "$OUT"

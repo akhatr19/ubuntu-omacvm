@@ -33,7 +33,19 @@ enum Installer {
     /// The user's own Applications folder (~/Applications): no admin rights
     /// needed, and the omacvm command looks there first.
     static var defaultFolder: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+        Product.isUbuntu ? URL(fileURLWithPath: "/Applications") : FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+    }
+
+    /// Keep the installed copy in the launcher, rather than the build/download copy.
+    static func registerInstalledCopy(_ app: URL, previous: URL?) {
+        let tool = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        guard Product.isUbuntu, FileManager.default.isExecutableFile(atPath: tool) else { return }
+        let obsolete = [thisCopy.path] + (previous.map { [$0.path] } ?? [])
+        for arguments in obsolete.map({ ["-u", $0] }) + [["-f", app.path]] {
+            let process = Process(); process.executableURL = URL(fileURLWithPath: tool); process.arguments = arguments
+            process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+            if (try? process.run()) != nil { process.waitUntilExit() }
+        }
     }
 
     static func validName(_ name: String) -> Bool {
@@ -116,6 +128,7 @@ struct InstallView: View {
     @State private var custom: String
     @State private var folder: URL
     @State private var error: String?
+    @State private var removePrevious = true
 
     /// Starts on the name and folder of the copy installed before, so a new
     /// version replaces it in place; the first install on OmacVM in the
@@ -174,11 +187,22 @@ struct InstallView: View {
                     .labelsHidden()
                     .fixedSize()
                 }
-                SettingRow(title: "Folder", subtitle: replaced, probe: "install-folder") {
+                SettingRow(title: "Install location", subtitle: replaced ?? (Product.isUbuntu ? "\(folder.path)/\(name).app" : nil), probe: "install-folder") {
                     Text(StorageModel.short(folder)).font(.subheadline).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle).frame(maxWidth: 260, alignment: .trailing)
                         .help(folder.path)
                     Button("Change…") { pick() }
+                }
+                if Product.isUbuntu {
+                    SettingRow(title: "Applications folder", subtitle: "/Applications is shared; ~/Applications belongs only to your account.", probe: "install-scope") {
+                        Button("All users") { folder = URL(fileURLWithPath: "/Applications") }
+                        Button("Only me") { folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications") }
+                    }
+                    if let previous = previousElsewhere {
+                        SettingRow(title: "Previous copy", subtitle: previous.path, probe: "install-previous") {
+                            Toggle("Move previous app to Trash", isOn: $removePrevious).toggleStyle(.checkbox)
+                        }
+                    }
                 }
             }
         }
@@ -191,6 +215,12 @@ struct InstallView: View {
         guard FileManager.default.fileExists(atPath: target.path) else { return nil }
         let version = InstallMemory.version(of: target).map { " \($0)" } ?? ""
         return "Replaces \(name)\(version) in this folder. Your VMs and settings stay."
+    }
+
+    private var previousElsewhere: URL? {
+        guard let previous = memory.previousInstall(excluding: folder.appendingPathComponent("\(name).app")),
+              InstallMemory.path(previous) != InstallMemory.path(Installer.thisCopy) else { return nil }
+        return previous
     }
 
     private func pick() {
@@ -209,7 +239,13 @@ struct InstallView: View {
             return
         }
         do {
+            let previous = Product.isUbuntu && removePrevious ? previousElsewhere : nil
+            if let previous, Installer.inUse(previous) { throw HelperError.io("Quit the previous app and its VMs before moving the installation.") }
             let app = try Installer.install(name: name, into: folder)
+            if let previous {
+                do { try FileManager.default.trashItem(at: previous, resultingItemURL: nil) }
+                catch { self.error = "Installed to \(app.path), but could not move the previous copy to Trash: \(error.localizedDescription)"; return }
+            }
             let config = NSWorkspace.OpenConfiguration()
             config.createsNewApplicationInstance = true
             config.arguments = ["--installed-by", String(ProcessInfo.processInfo.processIdentifier)]
@@ -218,7 +254,10 @@ struct InstallView: View {
                     if let error {
                         self.error = "Installed to \(app.path), but it did not open: \(error.localizedDescription)"
                     } else {
-                        NSApp.terminate(nil)
+                        DispatchQueue.global(qos: .utility).async {
+                            Installer.registerInstalledCopy(app, previous: previous)
+                            DispatchQueue.main.async { NSApp.terminate(nil) }
+                        }
                     }
                 }
             }

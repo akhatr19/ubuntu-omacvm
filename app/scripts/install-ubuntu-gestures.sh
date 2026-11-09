@@ -13,5 +13,5 @@ if [[ ! -f $TOKEN ]]; then
   (umask 077; openssl rand -hex 32 > "$TOKEN")
 fi
 [[ $(tr -d '\n' < "$TOKEN") =~ ^[0-9a-f]{64}$ ]] || die 'The existing gestures token is invalid; it was left unchanged'
-"$OMACVM_SRC/gestures/mac/install.sh" --prebuilt "$HELPER"
-echo 'Allow OmacVM Gestures in macOS Privacy & Security → Accessibility and Input Monitoring.'
+"$OMACVM_SRC/gestures/mac/install.sh" --prebuilt "$HELPER" --app-name UbuntuVMGestures.app
+echo 'Allow UbuntuVM Gestures in macOS Privacy & Security → Accessibility and Input Monitoring.'

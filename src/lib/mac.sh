@@ -73,7 +73,7 @@ helper_pid() {
     bridge-test) exe="OmacVM Test Bridge\.app/Contents/MacOS/" ;;
     gestures-test) exe="OmacVM Test Gestures\.app/Contents/MacOS/" ;;
     bridge-) exe="OmacVMBridge\.app/Contents/MacOS/omacvm-bridge" ;;
-    gestures-) exe="OmacVMGestures\.app/Contents/MacOS/omacvm-gestures" ;;
+    gestures-) exe="OmacVMGestures\.app/Contents/MacOS/omacvm-gestures|UbuntuVMGestures\.app/Contents/MacOS/omacvm-gestures" ;;
     *) return 1 ;;
   esac
   LC_ALL=C pgrep -a -o -u "$(id -u)" -f "$exe"   # bytes: in UTF-8, pgrep -f fails on any line that is not UTF-8 (#545)

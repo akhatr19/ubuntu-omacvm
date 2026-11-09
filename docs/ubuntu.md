@@ -21,7 +21,14 @@ commit matches and that this fork has not changed its runtime patches,
 compiles the launcher, packages the Ubuntu sources and orange terminal icon,
 and ad-hoc signs the result. Xcode is required. Its bundle ID is
 `org.omacvm.ubuntu`; its default VM folder is `~/UbuntuVMs`. The first launch offers **Install and Open** to copy the app into Applications;
-there is no try/skip-install path. Previous skip choices are ignored.
+there is no try/skip-install path. The installer shows the full destination:
+`/Applications` for all users or `~/Applications` for only your account. Existing
+installations retain their location unless you choose another. When moving an
+installation, an explicit checkbox moves the previous app to Trash after the
+new copy is ready; VM data stays outside the app. The build/download copy is
+unregistered from the launcher after installation. **Developer & SSH → App
+location → Show in Finder** reveals the copy actually running. Previous skip
+choices are ignored.
 Permission prompts remain macOS's normal human choices. Upstream OmacVM app
 updates are disabled for this fork so they cannot replace the Ubuntu port.
 
@@ -209,3 +216,13 @@ Finder/gesture validation used a hidden disposable Ubuntu VM:
   return swipe. No Mac desktop input was injected.
 - The physical Mac trackpad and permission prompts still require the person;
   the transport test used a stand-in Mac sender with a disposable token.
+
+## Gestures helper location
+
+The Ubuntu installer labels the helper **UbuntuVM Gestures** and installs it at
+`~/Applications/UbuntuVMGestures.app`. Under Input, **Show Helper** reveals the
+actual installed bundle; **Permissions** opens Accessibility and Input Monitoring
+and includes **Install / Repair Helper…**. Only the person grants those macOS
+permissions. Existing legacy helper paths remain detectable during migration.
+Internal `org.omacvm.*` service identifiers and compatibility commands are kept;
+they do not indicate that a separate Omarchy installation is running.
