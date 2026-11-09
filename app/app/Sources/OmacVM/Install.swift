@@ -70,10 +70,11 @@ enum Installer {
     /// must not be replaced under it.
     static func inUse(_ app: URL) -> Bool {
         let root = InstallMemory.path(app) + "/"
-        return NSWorkspace.shared.runningApplications.contains {
+        let application = NSWorkspace.shared.runningApplications.contains {
             guard let exe = $0.executableURL, !$0.isTerminated else { return false }
             return InstallMemory.path(exe).hasPrefix(root)
         }
+        return application || Storage.processLines().contains { $0.contains(root) }
     }
 
     /// Copies this app to FOLDER/NAME.app with NAME as its name and returns the
