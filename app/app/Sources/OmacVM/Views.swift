@@ -275,7 +275,7 @@ final class AppState: ObservableObject {
         }
         var c = VMConfig()
         // Never the folder of a VM that is there (one --vm did not name, say).
-        c.name = VMPick.freeName(root: Paths.vmsRoot, taken: VMConfig.all().map(\.name))
+        c.name = VMPick.freeName(Product.guestName, root: Paths.vmsRoot, taken: VMConfig.all().map(\.name))
         let t = Mac.tier(1)
         c.cpus = t.cpus
         c.memoryMB = t.memoryGB * 1024
