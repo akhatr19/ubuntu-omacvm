@@ -11,7 +11,7 @@ enum Installer {
     }
 
     static var isInstalled: Bool {
-        memory.isInstalled(thisCopy) || ProcessInfo.processInfo.environment["OMACVM_RESOURCES"] != nil
+        memory.isInstalled(thisCopy, allowSkipped: !Product.isUbuntu) || ProcessInfo.processInfo.environment["OMACVM_RESOURCES"] != nil
     }
 
     /// Where this copy is, as the user sees it. A download that macOS runs
@@ -141,14 +141,16 @@ struct InstallView: View {
 
     var body: some View {
         WindowShell {
-            WindowHeader(title: "Install \(Product.name)", facts: "Its name shows in the Dock and the menu bar while \(Product.guestName) runs.") {
+            WindowHeader(title: "Install \(Product.name)", facts: Product.isUbuntu ? "Copy UbuntuVM to Applications. Your Ubuntu VMs and files stay where they are." : "Its name shows in the Dock and the menu bar while \(Product.guestName) runs.") {
                 AppIconButton()
             } trailing: {
-                Button("Run Without Installing") {
-                    memory.skip(Installer.thisCopy)
-                    onDone()
+                if !Product.isUbuntu {
+                    Button("Run Without Installing") {
+                        memory.skip(Installer.thisCopy)
+                        onDone()
+                    }
                 }
-                Button("Install") { install() }
+                Button(Product.isUbuntu ? "Install and Open" : "Install") { install() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!Installer.validName(name))

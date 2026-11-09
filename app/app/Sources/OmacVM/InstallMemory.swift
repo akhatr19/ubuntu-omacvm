@@ -29,12 +29,12 @@ struct InstallMemory {
     /// copy installed last, or the user ran this very copy without installing.
     /// An update (the app's own or omacvm update) puts the new version at the
     /// same path, so it is not asked either.
-    func isInstalled(_ app: URL) -> Bool {
+    func isInstalled(_ app: URL, allowSkipped: Bool = true) -> Bool {
         let parent = Self.path(app.deletingLastPathComponent())
         if appFolders.contains(where: { Self.path($0) == parent }) { return true }
         if let last = defaults.string(forKey: Self.installedKey),
            Self.path(URL(fileURLWithPath: last)) == Self.path(app) { return true }
-        return skipped(app)
+        return allowSkipped && skipped(app)
     }
 
     func skipped(_ app: URL) -> Bool {
