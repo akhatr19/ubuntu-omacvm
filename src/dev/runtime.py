@@ -1,5 +1,6 @@
 """The developer VM lifecycle. The app's existing QEMU/runtime stays authoritative."""
 import base64
+import fcntl
 import hashlib
 import json
 import os
@@ -239,6 +240,7 @@ def stop(vm, force=False):
     if not state:
         if disk_busy(vm):
             raise ValueError('environment belongs to the desktop app; shut it down there')
+        wait_for_owner(vm)
         return
     socket_request(sockets(vm) / 'qmp', 'quit' if force else 'system_powerdown')
     end = time.monotonic() + (15 if force else 90)
@@ -246,6 +248,21 @@ def stop(vm, force=False):
         time.sleep(.25)
     if live(vm):
         raise TimeoutError('guest did not shut down; use --force only if data loss is acceptable')
+    wait_for_owner(vm)
+
+
+def wait_for_owner(vm):
+    """QEMU can exit before its supervisor has closed forwards and released ownership."""
+    with open(sockets(vm) / 'owner.lock', 'a') as owner:
+        deadline = time.monotonic() + 15
+        while True:
+            try:
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('the background supervisor is still closing; retry shortly')
+                time.sleep(.05)
 
 
 def local_resources(vm):
