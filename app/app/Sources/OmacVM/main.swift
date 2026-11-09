@@ -481,6 +481,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showWindow()
             return
         }
+        if Product.isUbuntu, DeveloperActions.name(state.config) != nil {
+            do { try DeveloperActions.open(state.config, "desktop") }
+            catch { state.say(error.localizedDescription) }
+            return
+        }
         // This app runs the VM already, or a start is on its way: that one goes on.
         if let r = runner {
             if r.isRunning { Self.qemuApp?.activate() }

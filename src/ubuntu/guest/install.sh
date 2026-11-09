@@ -53,7 +53,7 @@ ln -sf omacvm-browser /usr/local/bin/omacvm-browser-webgpu
 install -Dm644 "$(dirname "$0")/omacvm-browser.desktop" /usr/local/share/applications/omacvm-browser.desktop
 install -Dm644 "$(dirname "$0")/omacvm-browser-webgpu.desktop" /usr/local/share/applications/omacvm-browser-webgpu.desktop
 if ! command -v google-chrome-stable >/dev/null; then
-  curl -fL --retry 3 -o "$T/chrome.deb" https://dl.google.com/linux/direct/google-chrome-stable_current_arm64.deb
+  curl -fL --retry 3 --retry-all-errors -o "$T/chrome.deb" https://dl.google.com/linux/direct/google-chrome-stable_current_arm64.deb
   apt-get install -y "$T/chrome.deb"
 fi
 install -d /etc/mpv

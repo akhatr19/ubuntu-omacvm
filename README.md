@@ -4,6 +4,8 @@ Ubuntu Desktop ARM64 on Apple Silicon, using OmacVM’s accelerated runtime and 
 
 See [the Ubuntu setup guide](docs/ubuntu.md) for the app build, ISO installer, graphics modes and remaining limitations.
 
+For a terminal-first workflow, use [`uvm` developer environments](docs/developer-environments.md): pinned base images and package locks, Linux projects, VS Code Remote SSH, Docker, localhost forwarding, and an optional desktop.
+
 ## Original upstream documentation
 
 The documentation below describes the original Omarchy route.

@@ -23,7 +23,7 @@ C=$APP/Contents
 ditto "$BASE" "$APP"
 cp "$BIN/OmacVM" "$C/MacOS/OmacVM"
 cp "$R"/app/scripts/*.sh "$C/Resources/scripts/"
-COPYFILE_DISABLE=1 tar --no-xattrs --exclude=.build --exclude=build -czf - -C "$R" omacvm src README.md CHANGELOG.md docs |
+COPYFILE_DISABLE=1 tar --no-xattrs --exclude=.build --exclude=build --exclude=__pycache__ --exclude='*.pyc' -czf - -C "$R" omacvm uvm src README.md CHANGELOG.md docs |
   tar -xzf - -C "$C/Resources/omacvm"
 COMMIT=$(git -C "$R" rev-parse HEAD)
 printf '%s\n' "$COMMIT" > "$C/Resources/omacvm/COMMIT"

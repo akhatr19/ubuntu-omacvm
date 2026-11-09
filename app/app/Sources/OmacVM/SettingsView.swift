@@ -187,6 +187,7 @@ struct SettingsSections: View {
         VStack(alignment: .leading, spacing: 0) {
             SectionTitle(text: "General", first: true)
             Card {
+                if Product.isUbuntu { DeveloperRow(state: state) }
                 ResourcesRow(state: state)
                 GraphicsRow(state: state)
                 if Product.isUbuntu {

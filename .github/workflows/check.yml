@@ -79,6 +79,9 @@ jobs:
           git ls-files -z '*.py' | xargs -0 python3 -m py_compile
           python3 -m py_compile src/control/omacvm
 
+      - name: Developer manifests, disk bundles and host boundaries
+        run: python3 -m unittest discover -s src/dev/tests -v
+
       - name: omacvm report runs on macOS's own python3
         run: /usr/bin/python3 -c "import sys; sys.path.insert(0, 'src/control'); import omacvm_cc.report, omacvm_cc.collect, omacvm_cc.bridge, omacvm_cc.state"
 

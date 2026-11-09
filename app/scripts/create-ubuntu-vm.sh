@@ -27,7 +27,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 if [[ $RESUME != --resume ]]; then
 IFS= read -r PASSWORD || true
-if [[ ${OMACVM_UBUNTU_TEST:-0} == 1 && $NAME == "OmacVM Test-"* ]]; then HASH='!'
+if [[ ${OMACVM_UBUNTU_SSH_ONLY:-0} == 1 || ( ${OMACVM_UBUNTU_TEST:-0} == 1 && $NAME == "OmacVM Test-"* ) ]]; then HASH='!'
 else
   [[ -n $PASSWORD ]] || die "no password on stdin"
   HASH=$(printf '%s' "$PASSWORD" | python3 "$OMACVM_SRC/prebuilt/sha512crypt.py")

@@ -13,6 +13,7 @@ class SeedTests(unittest.TestCase):
         install = data["autoinstall"]
         self.assertEqual(install["storage"]["layout"]["match"], {"serial": "QEMU_NVMe_Ctrl_omacvm_1"})
         self.assertFalse(install["ssh"]["allow-pw"])
+        self.assertFalse(install["user-data"]["ssh_deletekeys"])
         self.assertEqual(install["shutdown"], "poweroff")
 
     def test_rejects_shell_injection_and_plain_passwords(self):

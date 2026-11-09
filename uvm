@@ -1,0 +1,12 @@
+#!/bin/bash
+# UbuntuVM's developer CLI. Uses the bundled Python when shipped in the app.
+set -euo pipefail
+entry=$0
+while [[ -L $entry ]]; do
+  target=$(readlink "$entry")
+  [[ $target == /* ]] && entry=$target || entry=$(dirname "$entry")/$target
+done
+root=$(cd "$(dirname "$entry")" && pwd)
+source "$root/src/lib/tools.sh"
+tools_path
+exec python3 "$root/src/dev/uvm.py" "$@"

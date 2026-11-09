@@ -147,6 +147,10 @@ final class AppState: ObservableObject {
     /// start): the VM started without a window, OmacVM and its Mac helpers
     /// brought up to this app's, shut down.
     func updateVM(askMarker: Bool = true, features: [String] = []) {
+        if Product.isUbuntu, DeveloperActions.name(config) != nil {
+            say("Developer environments use uvm provision to replay their lock. Create a new pinned base to upgrade Ubuntu.")
+            return
+        }
         // A test build never updates a VM of the installed app.
         if let why = Paths.startProblem(config.folder) { say(why); startAfterUpdate = false; return }
         // Not shut down cleanly, or copied while it ran: asked first.

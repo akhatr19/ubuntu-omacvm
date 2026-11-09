@@ -15,7 +15,7 @@ apt-get install -y --no-install-recommends build-essential meson ninja-build pkg
   libzstd-dev zlib1g-dev libsystemd-dev libudev-dev libdisplay-info-dev libvulkan-dev curl ca-certificates xz-utils
 B=$(mktemp -d /var/tmp/omacvm-venus.XXXXXX)
 trap 'rm -rf "$B"' EXIT
-curl -fL --retry 3 -o "$B/mesa.tar.xz" "https://archive.mesa3d.org/mesa-$VERSION.tar.xz"
+curl -fL --retry 3 --retry-all-errors -o "$B/mesa.tar.xz" "https://archive.mesa3d.org/mesa-$VERSION.tar.xz"
 echo "bce5f7fbebb934373b86c999a064d52fb5065878dc57f287f95346648ec832e9  $B/mesa.tar.xz" | sha256sum -c -
 tar -xJf "$B/mesa.tar.xz" -C "$B"
 for p in mesa-venus-opaque-fd-semaphores mesa-venus-tls-after-unload; do

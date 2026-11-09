@@ -27,6 +27,7 @@ def config(user, hostname, password, key):
         "storage": {"layout": {"name": "direct", "match": {"serial": "QEMU_NVMe_Ctrl_omacvm_1"}}},
         "ssh": {"install-server": True, "allow-pw": False,
                 "authorized-keys": [key]},
+        "user-data": {"ssh_deletekeys": False},
         "packages": ["qemu-guest-agent"],
         "error-commands": [
             "tail -n 100 /var/log/installer/subiquity-server-debug.log > /dev/ttyAMA0",
@@ -38,6 +39,7 @@ def config(user, hostname, password, key):
             "mount -L cidata /mnt/omacvm",
             "install -d -m700 /target/root/.ssh",
             "install -m600 /mnt/omacvm/authorized_keys /target/root/.ssh/authorized_keys",
+            "curtin in-target -- ssh-keygen -A",
             "umount /mnt/omacvm",
         ],
         "shutdown": "poweroff",

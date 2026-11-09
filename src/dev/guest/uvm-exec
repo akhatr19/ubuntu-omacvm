@@ -1,0 +1,54 @@
+#!/usr/bin/python3
+"""Run argv without a shell, with explicit cwd, GPU environment and cancellable jobs."""
+import base64
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+
+jobs = Path.home() / '.cache/uvm/jobs'
+jobs.mkdir(parents=True, exist_ok=True, mode=0o700)
+if sys.argv[1:2] == ['--cancel']:
+    identity = sys.argv[2]
+    if not re.fullmatch(r'[0-9a-f]{32}', identity):
+        sys.exit(2)
+    try:
+        record = json.loads((jobs / identity).read_text())
+        stat = Path(f'/proc/{record["pid"]}/stat').read_text().rsplit(')', 1)[1].split()
+        if stat[19] == record['start']:
+            os.killpg(record['group'], signal.SIGINT)
+    except (FileNotFoundError, ProcessLookupError):
+        pass
+    sys.exit(0)
+
+request = json.loads(base64.b64decode(sys.argv[1], validate=True))
+identity, argv, cwd = request['id'], request['argv'], request['cwd']
+if not re.fullmatch(r'[0-9a-f]{32}', identity) or not isinstance(argv, list) or not argv:
+    sys.exit(2)
+if any(not isinstance(a, str) or '\0' in a for a in argv) or not isinstance(cwd, str):
+    sys.exit(2)
+os.chdir(cwd)
+environment = os.environ.copy()
+environment.update(RUSTICL_ENABLE='zink', VK_DRIVER_FILES='/etc/vulkan/icd.d/omacvm_venus_icd.json',
+                   LIBVA_DRIVER_NAME='omacvm', LIBVA_DRIVERS_PATH='/usr/local/lib/dri')
+process = subprocess.Popen(argv, env=environment, start_new_session=not sys.stdin.isatty())
+file = jobs / identity
+try:
+    stat = Path(f'/proc/{process.pid}/stat').read_text().rsplit(')', 1)[1].split()
+    file.write_text(json.dumps({'pid': process.pid, 'group': os.getpgid(process.pid), 'start': stat[19]}))
+except (FileNotFoundError, ProcessLookupError):
+    pass  # A short command may already have exited.
+try:
+    while True:
+        try:
+            status = process.wait()
+            break
+        except KeyboardInterrupt:
+            if not sys.stdin.isatty():
+                os.killpg(process.pid, signal.SIGINT)
+finally:
+    file.unlink(missing_ok=True)
+sys.exit(status if status >= 0 else 128 - status)
