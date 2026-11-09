@@ -36,6 +36,13 @@ if [[ $APP_NAME == UbuntuVMGestures.app && -d $HOME/Applications/OmacVMGestures.
 fi
 # The app it came from was already let in; launchd does not ask again.
 xattr -dr com.apple.quarantine "$HOME/Applications/$APP_NAME" 2>/dev/null || true
+if [[ $APP_NAME == UbuntuVMGestures.app ]]; then
+  register=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+  if [[ -x $register ]]; then
+    "$register" -u "$HOME/Applications/OmacVMGestures.app" >/dev/null 2>&1 || true
+    "$register" -f "$HOME/Applications/$APP_NAME" >/dev/null 2>&1 || true
+  fi
+fi
 cat > "$PL" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
