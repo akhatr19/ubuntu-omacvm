@@ -40,7 +40,7 @@ enum Paths {
     }
     /// Decided once per launch: the VMs folder must not change under a VM
     /// that runs or is being built.
-    private static let defaultVMsRoot = VMsFolder.resolve(custom: nil, home: VMsFolder.home)
+    private static let defaultVMsRoot = Product.isUbuntu ? VMsFolder.home.appendingPathComponent("UbuntuVMs") : VMsFolder.resolve(custom: nil, home: VMsFolder.home)
 
     /// The installed app's (org.omacvm.app) VMs folders, read once per
     /// launch: a test build never acts on a VM in one of them (TestVMs).
@@ -159,6 +159,8 @@ enum Paths {
 
 /// The app's display name: what the user called the app (OmacVM, Omarchy, ...).
 enum Product {
+    static var isUbuntu: Bool { Bundle.main.bundleIdentifier?.hasPrefix("org.omacvm.ubuntu") == true }
+    static var guestName: String { isUbuntu ? "Ubuntu" : "Omarchy" }
     static var name: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "OmacVM"
     }
@@ -166,14 +168,14 @@ enum Product {
 
 /// One VM: a folder with vm.env, disk.img, efi-vars.fd and logs/.
 struct VMConfig: Equatable {
-    var name = "Omarchy"
+    var name = Product.guestName
     var cpus = 4
     var memoryMB = 8192
     var diskGB = 64
     var sshPort = 52222
     var user = ""
     var fullName = ""
-    var hostname = "omarchy"
+    var hostname = Product.isUbuntu ? "ubuntu" : "omarchy"
     var timeZone = "UTC"
     var language = "en_US.UTF-8"
     var keyboard = "us"
@@ -774,7 +776,10 @@ enum Settings {
     /// use the cursor plane yet (docs/routes/app.md), so it changes nothing
     /// there today. From the VM's next start.
     /// Hidden: defaults write org.omacvm.app macPointer -bool true
-    static var macPointer: Bool { UserDefaults.standard.bool(forKey: "macPointer") }
+    static var macPointer: Bool {
+        UserDefaults.standard.object(forKey: "macPointer") == nil ? Product.isUbuntu
+            : UserDefaults.standard.bool(forKey: "macPointer")
+    }
 }
 
 extension GhosttyGPU.Driver {

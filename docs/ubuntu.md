@@ -10,12 +10,24 @@ The source-tree command needs the existing runtime and firmware under
 `app/runtime/.build`, produced by `app/scripts/build-app.sh`. For development,
 the corresponding runtime and firmware from the verified upstream release can
 also be used; an ordinary Homebrew QEMU does not have the required patches.
-Build a separately named app with `app/scripts/build-app.sh --name UbuntuVM
---id org.omacvm.ubuntu`, and point its VMs folder at `~/UbuntuVMs`. The
-development copy is kept separate from upstream OmacVM; upstream releases do
-not contain this Ubuntu port.
-Create additional Ubuntu VMs through the command below; the upstream
-graphical creation wizard still creates Omarchy VMs.
+Build the Ubuntu launcher around the official OmacVM 3.4.1 release app:
+
+```bash
+app/scripts/build-ubuntu-app.sh /path/to/OmacVM.app /path/to/UbuntuVM.app
+```
+
+The output path must be new. The script checks that the runtime's source
+commit matches and that this fork has not changed its runtime patches,
+compiles the launcher, packages the Ubuntu sources and orange terminal icon,
+and ad-hoc signs the result. Xcode is required. Its bundle ID is
+`org.omacvm.ubuntu`; its default VM folder is `~/UbuntuVMs`. Install and
+permission prompts remain macOS's normal human choices. Upstream OmacVM app
+updates are disabled for this fork so they cannot replace the Ubuntu port.
+
+The app's **New VM** screen accepts the official Ubuntu ISO, user name,
+password and resource choices. It checks the ISO checksum and runs the same
+Ubuntu installer as the CLI below. No Omarchy image or prebuilt lookup runs.
+The installer needs at least 6 GB of configured VM RAM; 8 GB is recommended.
 
 Download `ubuntu-26.10-desktop-arm64.iso` from
 [Ubuntu's official release directory](https://cdimage.ubuntu.com/ubuntu/releases/26.10/release/).
@@ -55,8 +67,8 @@ mpv uses OpenGL presentation and VA-API decoding.
 Google's ARM64 Chrome .deb is installed inside the guest. Two launchers are
 provided:
 
-- **OmacVM Browser:** Wayland browser for hardware video decoding.
-- **OmacVM Browser (WebGPU):** separate profile, Xwayland/Vulkan compositor,
+- **UbuntuVM Video Browser:** Wayland browser for hardware video decoding.
+- **UbuntuVM WebGPU Browser:** separate profile, Xwayland/Vulkan compositor,
   hardware WebGPU, software video decoding. This follows upstream's buffer
   sharing limitation; combining both in one browser remains out of scope.
 
@@ -79,9 +91,41 @@ browser's media diagnostics; run `src/bench/pages/webgpu-matmul.html` and check
 both its numerical result and hardware adapter. Compare host memory before
 and after allocating/freeing guest memory, including macOS's reclaim log.
 
-GNOME-specific display synchronization, gestures, clipboard, host hardware
-panels, camera, Touch ID and the full feature control centre are separate
-follow-up work. The Ubuntu route refuses the Omarchy guest installer.
+## Desktop integration
+
+- **Native cursor:** enabled by default in UbuntuVM. GNOME places its cursor
+  on the stock virtio hardware cursor plane; QEMU uses that image and hotspot
+  as the real macOS cursor and hides its extra cursor layer. The Display
+  section has a **Native Mac pointer** switch, effective next start. Relative
+  mouse input (games) retains the existing fallback.
+- **Clipboard:** text and PNG images in both directions, with the existing
+  16 MiB limit and echo protection. A small GNOME 51 extension observes the
+  selection because GNOME lacks the data-control protocol used by the
+  Hyprland agent. No shell-eval or portal-security settings are changed.
+- **Displays:** a session agent uses Mutter's DisplayConfig API to apply
+  the host's modes, scale and layout and report logical geometry back to
+  QEMU. Changes are temporary, preserving Ubuntu's saved monitor settings.
+  It responds to hotplug/layout events instead of polling while idle.
+- **Files:** choose **Mac folder** in the app; it mounts at `~/Mac` next boot.
+  Only the selected folder is exposed. Clipboard is for text/images; Finder
+  drag-and-drop is not ported.
+- **Media/audio:** the upstream MPRIS agent provides Now Playing and media
+  controls; host output latency is applied to PipeWire for video sync.
+- **Battery/camera:** the existing battery module and v4l2loopback camera
+  build through Ubuntu DKMS/headers. New Ubuntu VMs enable these host ports.
+  Camera capture still requires the person's macOS permission when used;
+  installing its guest device does not grant that permission.
+- **Settings:** the VM's Features menu opens Ubuntu Settings. **Update VM**
+  updates the Ubuntu integrations without invoking the Omarchy installer or
+  replacing the Mac's helpers.
+
+Omanotch and Omarchy's shell/theme migration are omitted. Full screen uses
+the area below the notch. GNOME gesture forwarding, Touch ID, Mac IME,
+Finder drops, HDR and invisible-window DPMS still need separate ports and
+runtime validation; their Omarchy-specific switches are not offered in the
+Ubuntu app. Ordinary mouse input, scrolling and keyboard input remain on
+the existing QEMU path. No Bridge/Gestures helper or macOS permission was
+installed or granted by this port.
 
 ## Validation on this port
 
@@ -107,3 +151,17 @@ not validate visible presentation pacing, HDR, or every codec. Rusticl emits
 upstream warnings about Zink's missing custom-border-color support and the
 distribution's libclc; the compute smoke test passes, but full OpenCL
 conformance and individual applications have not been established.
+
+Additional Ubuntu integration validation:
+
+- Unicode text and PNG clipboard round trips passed on a private Mac
+  pasteboard, without changing the user's pasteboard during the test.
+- GNOME's DRM cursor plane became active after absolute pointer input; the
+  packaged launcher enabled native hardware-cursor handling by default.
+- Mutter followed the host's 2× scale, and reapplied it after a GNOME change.
+- The selected Mac test folder mounted through 9p; reads and writes passed.
+- UPower received the Mac battery level, the camera module exposed
+  `/dev/video42`, and the host's audio latency appeared on the guest output.
+- Guest checks and media/audio regression tests passed. Camera capture,
+  physical multi-display layouts and visible cursor behavior still require
+  interactive testing with the person's permissions and displays.

@@ -12,6 +12,10 @@
 
 dkms_tools() {
   local t
+  if [[ -f /etc/debian_version ]]; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y dkms make gcc "$@"
+    return
+  fi
   "$(dirname "${BASH_SOURCE[0]}")/pkg-add" dkms make gcc "$@" || true
   for t in dkms make gcc; do
     command -v "$t" >/dev/null && continue
@@ -26,6 +30,10 @@ dkms_tools() {
 # (kernel/build-thp-kernel.sh).
 kernel_headers() {
   local k=$1 have want f
+  if [[ -f /etc/debian_version ]]; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y linux-headers-generic "linux-headers-$(uname -r)"
+    return
+  fi
   have=$(pacman -Q "$k" 2>/dev/null | awk '{ print $2 }') || return 0
   [[ -n $have ]] || return 0
   [[ $(pacman -Q "$k-headers" 2>/dev/null | awk '{ print $2 }') == "$have" ]] && return 0

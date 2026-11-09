@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=OmacVM Browser
+Name=UbuntuVM Video Browser
 Comment=Browser with Mac hardware video decoding
 Exec=omacvm-browser %U
 Icon=web-browser

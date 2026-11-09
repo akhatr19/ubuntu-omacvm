@@ -10,9 +10,9 @@ R=$(cd "$(dirname "$0")/../.." && pwd)
 A=$R/app/guest
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends qemu-guest-agent openssh-server python3 python3-gi \
+apt-get install -y --no-install-recommends qemu-guest-agent openssh-server python3 python3-gi dbus-daemon \
   build-essential libva-dev libegl-dev libglvnd-dev mesa-va-drivers mesa-vulkan-drivers \
-  mesa-opencl-icd vulkan-tools clinfo vainfo mesa-utils mpv ffmpeg systemd-zram-generator
+  mesa-opencl-icd vulkan-tools clinfo vainfo mesa-utils mpv ffmpeg pulseaudio-utils systemd-zram-generator
 install -d /etc/omacvm
 printf 'OMACVM_USER=%s\nOMACVM_VM_TYPE=app\nOMACVM_GUEST_OS=ubuntu\nOMACVM_GRAPHICS=vulkan\n' "$U" > /etc/omacvm/env
 "$R/memory/guest/install.sh"
@@ -51,4 +51,5 @@ printf 'vo=gpu\ngpu-api=opengl\nhwdec=vaapi\n' > /etc/mpv/omacvm.conf
 # mpv reads *.conf only when included; a drop-in avoids replacing Ubuntu/user settings.
 touch /etc/mpv/mpv.conf
 grep -qxF 'include=/etc/mpv/omacvm.conf' /etc/mpv/mpv.conf || echo 'include=/etc/mpv/omacvm.conf' >> /etc/mpv/mpv.conf
+"$(dirname "$0")/integrations.sh" "$U"
 echo "Ubuntu guest setup installed; restart before testing graphics and compute"

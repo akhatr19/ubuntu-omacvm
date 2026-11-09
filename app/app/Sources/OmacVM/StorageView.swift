@@ -343,7 +343,7 @@ final class StorageModel: ObservableObject {
     func removeImagesAlert() -> NSAlert {
         let alert = NSAlert()
         alert.messageText = "Remove the downloaded images (\(Storage.format(downloads ?? 0)))?"
-        alert.informativeText = "These are the Omarchy images \(Product.name) downloaded to set up VMs, in \((downloadFolders.isEmpty ? [Paths.downloads] : downloadFolders).map { Self.short($0) }.joined(separator: " and ")). Your VMs keep everything; a new VM downloads them again.\n\nYour Mac's Downloads folder is not touched."
+        alert.informativeText = "These are the installation images \(Product.name) downloaded to set up VMs, in \((downloadFolders.isEmpty ? [Paths.downloads] : downloadFolders).map { Self.short($0) }.joined(separator: " and ")). Your VMs keep everything; a new VM downloads them again.\n\nYour Mac's Downloads folder is not touched."
         alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")
         return alert

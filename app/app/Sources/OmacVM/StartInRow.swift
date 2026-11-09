@@ -33,9 +33,9 @@ struct StartInRow: View {
             // pictures with 12 pt then need 11 pt more than the row has, and
             // the whole window slid 5 pt to the left (macOS 15 CI, 3.2.17).
             HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(StartIn.choices(hasNotch: hasNotch).enumerated()), id: \.element) { i, c in
+                ForEach(Array(StartIn.choices(hasNotch: hasNotch).filter { !Product.isUbuntu || $0 != .fullScreenNotch }.enumerated()), id: \.element) { i, c in
                     if i > 0 { Spacer(minLength: 2).frame(maxWidth: 12) }
-                    PictureChoice(title: c.caption, subtitle: c.detail(hasNotch: hasNotch), selected: c == current, width: 164) {
+                    PictureChoice(title: c.caption, subtitle: Product.isUbuntu ? (c == .fullScreen && hasNotch ? "Below the notch" : nil) : c.detail(hasNotch: hasNotch), selected: c == current, width: 164) {
                         set(c)
                     } picture: {
                         StartInPicture(kind: Self.kind(c), notch: hasNotch)

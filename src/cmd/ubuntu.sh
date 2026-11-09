@@ -70,7 +70,7 @@ mkdir -p "$VM_DIR"
   printf 'VM_USER=%s\nVM_HOSTNAME=ubuntu\nKEYBOARD=us\nFEATURES=' "$U"
   while IFS=$'\t' read -r f _; do
     [[ -n $f && $f != \#* ]] || continue
-    if [[ $f == gpu-compute ]]; then printf '%s=on ' "$f"; else printf '%s=off ' "$f"; fi
+    if [[ $f == gpu-compute || $f == battery || $f == camera ]]; then printf '%s=on ' "$f"; else printf '%s=off ' "$f"; fi
   done < "$R/src/features.tsv"
   echo
 } > "$VM_DIR/vm.env"

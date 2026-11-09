@@ -128,7 +128,7 @@ final class Creator: ObservableObject {
     enum Job { case build, update, move }
     @Published private(set) var job = Job.build
 
-    func start(config: VMConfig, password: String, prebuilt: Bool = false, graphics: GraphicsChoice = .auto) {
+    func start(config: VMConfig, password: String, prebuilt: Bool = false, graphics: GraphicsChoice = .auto, ubuntuISO: URL? = nil) {
         reset(.build, folder: config.folder, route: prebuilt ? .prebuilt : .build)
         do {
             try config.write()
@@ -138,8 +138,15 @@ final class Creator: ObservableObject {
             failed = "Could not write the VM settings: \(error.localizedDescription)"
             return
         }
-        launch(script: prebuilt ? "prebuilt-vm.sh" : "create-vm.sh", folder: config.folder,
-               log: "create.log", input: password + "\n")
+        if Product.isUbuntu {
+            guard let ubuntuISO else { failed = "Choose the Ubuntu Desktop ARM64 ISO first."; return }
+            try? "ubuntu\n".write(to: config.folder.appendingPathComponent("guest-os"), atomically: true, encoding: .utf8)
+            launch(script: "create-ubuntu-vm.sh", folder: config.folder, log: "create.log",
+                   input: password + "\n", args: [ubuntuISO.path])
+        } else {
+            launch(script: prebuilt ? "prebuilt-vm.sh" : "create-vm.sh", folder: config.folder,
+                   log: "create.log", input: password + "\n")
+        }
     }
 
     /// An existing VM (made by an older app): started without a window,

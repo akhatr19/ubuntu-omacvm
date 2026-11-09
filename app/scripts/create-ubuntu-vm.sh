@@ -10,6 +10,10 @@ if [[ $RESUME == --resume ]]; then
   [[ -f $VM_DIR/ubuntu-installed && ! -e $VM_DIR/ready ]] || die "no unfinished Ubuntu guest setup to resume"
 else
   [[ -f $ISO && ! -e $VM_DIR/disk.img ]] || die "need an ISO and a new VM (disk.img must not exist)"
+  echo 'STEP 1/4 Checking the Ubuntu image'
+  log "Checking Ubuntu ISO SHA-256"
+  [[ $(shasum -a 256 "$ISO" | cut -d' ' -f1) == 9242a38c47eb53a5beb153c249d4843e4366f8955e9b972663e4ab7989311e9f ]] ||
+    die "Choose the official Ubuntu 26.10 Desktop ARM64 ISO"
 fi
 tools_ok
 umask 077
@@ -37,6 +41,7 @@ tar -xf "$ISO" -C "$T" casper/vmlinuz casper/initrd
 [[ -f $T/casper/vmlinuz && -f $T/casper/initrd ]] || die "not an Ubuntu live ISO"
 truncate_file "$VM_DIR/disk.img" $((DISK_GB * 1024 * 1024 * 1024))
 efi_vars_create
+echo 'STEP 2/4 Installing Ubuntu Desktop'
 log "Installing Ubuntu (see $LOG/ubuntu-install-console.log)"
 OMACVM_HOST_PORTS= HOST_PORTS=
 qemu_headless ubuntu-install "${QEMU_UEFI[@]}" -kernel "$T/casper/vmlinuz" -initrd "$T/casper/initrd" \
@@ -49,6 +54,7 @@ qemu_headless ubuntu-install "${QEMU_UEFI[@]}" -kernel "$T/casper/vmlinuz" -init
 qemu_wait_exit 3600 || die "Ubuntu did not finish in an hour; inspect $LOG/ubuntu-install-console.log"
 ! grep -q OMACVM_UBUNTU_INSTALL_FAILED "$LOG/ubuntu-install-console.log" || die "Ubuntu installation failed; inspect $LOG/ubuntu-install-console.log"
 fi
+echo 'STEP 3/4 Setting up graphics and desktop integration'
 log "Starting the installed Ubuntu system"
 qemu_headless ubuntu-system "${QEMU_UEFI[@]}" -drive "$DISK_OPT" -device nvme,serial=omacvm,drive=disk,bootindex=0
 wait_ssh 300 || die "Ubuntu did not answer SSH; inspect $LOG/ubuntu-system-console.log"
@@ -57,6 +63,7 @@ COPYFILE_DISABLE=1 tar --no-xattrs -C "$OMACVM_SRC" -czf - . |
   vssh "mkdir -p /usr/local/share/omacvm; tar --no-same-owner -xzf - -C /usr/local/share/omacvm"
 vssh "bash /usr/local/share/omacvm/ubuntu/guest/install.sh '$VM_USER'" |
   tee "$LOG/ubuntu-guest-install.log"
+echo 'STEP 4/4 Shutting down the finished VM'
 vssh "systemctl poweroff" || true
 qemu_wait_exit 120 || die "Ubuntu did not shut down"
 printf 'ubuntu\n' > "$VM_DIR/guest-os"

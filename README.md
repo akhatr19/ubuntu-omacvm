@@ -1,4 +1,12 @@
-> **Ubuntu port:** this fork adds Ubuntu Desktop ARM64 with accelerated graphics, WebGPU/OpenCL, video decoding and memory reclamation. Start with [the Ubuntu setup guide](docs/ubuntu.md); the upstream Omarchy instructions below still apply to the original route.
+# UbuntuVM
+
+Ubuntu Desktop ARM64 on Apple Silicon, using OmacVM’s accelerated runtime and memory reclamation. Includes native Mac cursor rendering, GNOME clipboard/display integration, folder sharing, media controls, battery and camera support.
+
+See [the Ubuntu setup guide](docs/ubuntu.md) for the app build, ISO installer, graphics modes and remaining limitations.
+
+## Original upstream documentation
+
+The documentation below describes the original Omarchy route.
 
 <h1 align="center">OmacVM</h1>
 

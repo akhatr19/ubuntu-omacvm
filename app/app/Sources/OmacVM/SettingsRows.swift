@@ -291,7 +291,7 @@ struct PauseWhileHiddenRow: View {
     var tick = 0
     @State private var on = Settings.pauseWhileHidden
 
-    static let info = "Saves battery while you work in macOS with the VM in the background. When none of the VM's window can be seen for 2 seconds (minimised, covered by other windows, on another Space, the screen locked or asleep), the VM turns its display off and stops drawing, as macOS apps do for a window nobody sees: Linux apps get no new frames and stop drawing too. Sound, videos' sound, downloads, timers and everything else in the VM keep running. As soon as any part of the window shows again, the VM draws again; the first new picture comes a few frames later, until then you see the last one. A visible window is never touched: every frame, at the display's full rate. Only the VM's main window: in full screen on several displays, the other displays' windows keep drawing. Screen sharing or recording of the VM's screen from inside the VM keeps it drawing. Works at once in a running VM. Experimental: it switches the VM's display off and on (DPMS), as Omarchy's own screen blanking does."
+    static let info = "Saves battery while you work in macOS with the VM in the background. When none of the VM's window can be seen for 2 seconds (minimised, covered by other windows, on another Space, the screen locked or asleep), the VM turns its display off and stops drawing, as macOS apps do for a window nobody sees: Linux apps get no new frames and stop drawing too. Sound, videos' sound, downloads, timers and everything else in the VM keep running. As soon as any part of the window shows again, the VM draws again; the first new picture comes a few frames later, until then you see the last one. A visible window is never touched: every frame, at the display's full rate. Only the VM's main window: in full screen on several displays, the other displays' windows keep drawing. Screen sharing or recording of the VM's screen from inside the VM keeps it drawing. Works at once in a running VM. Experimental: it switches the VM's display off and on (DPMS), as the guest's own screen blanking does."
 
     var body: some View {
         SettingRow(title: "Pause drawing while hidden", badge: "experimental",
@@ -306,6 +306,19 @@ struct PauseWhileHiddenRow: View {
 
 /// Pointer on its own layer (Settings.pointerPlane, experimental, off by
 /// default): read by each start of the VM.
+struct NativePointerRow: View {
+    var tick = 0
+    @State private var on = Settings.macPointer
+
+    var body: some View {
+        SettingRow(title: "Native Mac pointer", subtitle: "Use Ubuntu's cursor image as the Mac pointer, without a second cursor behind it. From the next start.", probe: "native-pointer") {
+            RowSwitch(title: "Native Mac pointer", isOn: $on)
+        }
+        .onChange(of: on) { _, value in UserDefaults.standard.set(value, forKey: "macPointer") }
+        .onChange(of: tick) { _, _ in on = Settings.macPointer }
+    }
+}
+
 struct PointerPlaneRow: View {
     var tick = 0
     @State private var on = Settings.pointerPlane
@@ -534,7 +547,7 @@ struct KeyboardRow: View {
     var preview: KeyNote?
     @State private var keyNote = KeyNote.none
 
-    static let allowedInfo = "Without this permission, ⌘ Tab, ⌘ Space and ⌘ ⇧ 4 go to macOS instead of Omarchy. macOS keeps it under Privacy & Security › Accessibility."
+    static let allowedInfo = "Without this permission, ⌘ Tab, ⌘ Space and ⌘ ⇧ 4 go to macOS instead of the VM. macOS keeps it under Privacy & Security › Accessibility."
 
     var body: some View {
         SettingRow(title: "Keyboard access", subtitle: "Lets Mac shortcuts like ⌘Tab reach the VM.",
@@ -772,7 +785,7 @@ struct UpdateRow: View {
 
     var body: some View {
         SettingRow(title: "Check for updates once a week", subtitle: line,
-                   info: "Off: no checks and no messages. Check Now still works. The same switch as in the control centre in Omarchy.",
+                   info: "Off: no checks and no messages. Check Now still works. The same switch as in the guest control centre.",
                    probe: "updates") {
             if updater.checking { ProgressView().controlSize(.small) }
             if updater.staged != nil && !updater.installWhenIdle && !updater.restarting {

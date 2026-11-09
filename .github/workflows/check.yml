@@ -29,7 +29,7 @@ jobs:
   check:
     # A fork's pull request has another head repository (or none, once the fork
     # is deleted): false, so macos-15. fromJSON gives the runner's label list.
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","macOS","ARM64","omacvm-mini"]') || 'macos-15' }}
+    runs-on: ${{ (github.repository == 'gillesgoetsch/omacvm' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","macOS","ARM64","omacvm-mini"]') || 'macos-15' }}
     # the mini: fresh test binaries can wait minutes before they start (macOS); the
     # job then needs more than 35 min although nothing is wrong (#258). A runner
     # Mac held back by its power (the M1 Max on a 15 W charger: 54-71 min on
@@ -734,8 +734,8 @@ jobs:
   # changed) is built once per Mac. Forks and a manual run (macos-15, no cache)
   # skip this job.
   app:
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","macOS","ARM64","omacvm-mini"]') || 'macos-15' }}
+    if: github.repository == 'gillesgoetsch/omacvm' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ (github.repository == 'gillesgoetsch/omacvm' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","macOS","ARM64","omacvm-mini"]') || 'macos-15' }}
     # A cache hit takes a few minutes; a runtime built from source up to ~30.
     timeout-minutes: 45
     defaults:

@@ -143,7 +143,11 @@ if grep -qw 'thp-kernel=on' <<<"$kfeats" &&
 fi
 exec 3<&-
 
-step 2 "Updating OmacVM in the VM and on the Mac"
+if [[ $(cat "$VM_DIR/guest-os" 2>/dev/null) == ubuntu ]]; then
+  step 2 "Updating UbuntuVM guest integrations"
+else
+  step 2 "Updating OmacVM in the VM and on the Mac"
+fi
 run_logged "$LOG/omacvm-update.log" "$HERE/apply-vm.sh" "$VM_DIR" ||
   die "$(stopped_why "OmacVM did not update (log: $LOG/omacvm-update.log); the VM starts as before")"
 [[ -s $REASON ]] && die "$(stopped_why "")"

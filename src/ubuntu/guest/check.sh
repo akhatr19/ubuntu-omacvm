@@ -15,6 +15,14 @@ check "OpenCL GPU (Rusticl/Zink)" bash -o pipefail -c 'RUSTICL_ENABLE=zink clinf
 node=$(find /dev/dri -name 'renderD*' -print -quit 2>/dev/null)
 check "VA-API hardware decoder" bash -o pipefail -c 'LIBVA_DRIVER_NAME=omacvm LIBVA_DRIVERS_PATH=/usr/local/lib/dri vainfo --display drm --device "$1" 2>&1 | grep -E "VAProfile(H264|VP9).*VAEntrypointVLD"' _ "$node"
 check "browser installed" command -v google-chrome-stable
+check "GNOME clipboard extension" test -f /usr/share/gnome-shell/extensions/clipboard@ubuntu.omacvm.org/extension.js
+for name in clipboard displays media audio-latency; do
+  check "$name enabled for desktop sessions" systemctl --global is-enabled --quiet "omacvm-$name.service"
+done
+check "audio latency utility" command -v pactl
+check "shared folder service" systemctl is-enabled --quiet omacvm-mac-folder
+check "battery module" test -d /sys/module/omacvm_battery
+check "camera device" test -c /dev/video42
 check "WebGPU launcher" test -x /usr/local/bin/omacvm-browser-webgpu
 echo "Browser WebGPU dispatch and decoded playback require separate runtime tests; launchers alone do not verify them."
 exit "$((fails != 0))"

@@ -1,0 +1,9 @@
+#!/bin/bash
+# The VM menu's Features action opens Ubuntu's own settings.
+set -euo pipefail
+source /etc/omacvm/env
+U=${OMACVM_USER:?desktop user}
+uid=$(id -u "$U")
+exec runuser -u "$U" -- env XDG_RUNTIME_DIR="/run/user/$uid" \
+  DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+  systemd-run --user --collect --quiet gnome-control-center

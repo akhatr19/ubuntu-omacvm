@@ -33,6 +33,7 @@ if [[ $(cat "$VM_DIR/guest-os" 2>/dev/null) == ubuntu ]]; then
   COPYFILE_DISABLE=1 tar --no-xattrs -C "$OMACVM_SRC" -czf - . |
     vssh "mkdir -p /usr/local/share/omacvm; tar --no-same-owner -xzf - -C /usr/local/share/omacvm"
   vssh "bash /usr/local/share/omacvm/ubuntu/guest/install.sh '$VM_USER'"
+  cp "$OMACVM_SRC/VERSION" "$VM_DIR/omacvm-version"
   exit
 fi
 

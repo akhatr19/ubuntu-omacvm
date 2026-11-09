@@ -124,8 +124,8 @@ struct InstallView: View {
          onDone: @escaping () -> Void) {
         self.onDone = onDone
         self.memory = memory
-        let pick = memory.preselection(for: Installer.thisCopy, name: "OmacVM", folder: firstFolder)
-        let preset = ["OmacVM", "Omarchy"].firstIndex(of: pick.name)
+        let pick = memory.preselection(for: Installer.thisCopy, name: Product.name, folder: firstFolder)
+        let preset = [Product.isUbuntu ? "UbuntuVM" : "OmacVM", Product.guestName].firstIndex(of: pick.name)
         _choice = State(initialValue: preset ?? 2)
         _custom = State(initialValue: preset == nil ? pick.name : "")
         _folder = State(initialValue: pick.folder)
@@ -133,15 +133,15 @@ struct InstallView: View {
 
     private var name: String {
         switch choice {
-        case 0: "OmacVM"
-        case 1: "Omarchy"
+        case 0: Product.isUbuntu ? "UbuntuVM" : "OmacVM"
+        case 1: Product.guestName
         default: custom.trimmingCharacters(in: .whitespaces)
         }
     }
 
     var body: some View {
         WindowShell {
-            WindowHeader(title: "Install \(Product.name)", facts: "Its name shows in the Dock and the menu bar while Omarchy runs.") {
+            WindowHeader(title: "Install \(Product.name)", facts: "Its name shows in the Dock and the menu bar while \(Product.guestName) runs.") {
                 AppIconButton()
             } trailing: {
                 Button("Run Without Installing") {
@@ -164,8 +164,8 @@ struct InstallView: View {
                         TextField("Name", text: $custom).labelsHidden().frame(width: 180)
                     }
                     Picker("Name", selection: $choice) {
-                        Text("OmacVM").tag(0)
-                        Text("Omarchy").tag(1)
+                        Text(Product.isUbuntu ? "UbuntuVM" : "OmacVM").tag(0)
+                        Text(Product.guestName).tag(1)
                         Text("Your Own").tag(2)
                     }
                     .pickerStyle(.segmented)
