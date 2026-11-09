@@ -176,10 +176,13 @@ printf '%%s\\n' "$KEY" | runuser -u "$U" -- env HOME="$H" bash -c '
 set -e; umask 077; mkdir -p "$HOME/.ssh"; t=$(mktemp "$HOME/.ssh/.uvm.XXXXXX"); cat > "$t"; mv "$t" "$HOME/.ssh/authorized_keys"'
 fi
 hostnamectl set-hostname %s
+sed -i %s /etc/omacvm/env
 systemctl stop gdm3.service 2>/dev/null || true
 systemctl restart ssh.service
 cat /etc/ssh/ssh_host_ed25519_key.pub
-''' % (shlex.quote(user), shlex.quote(key), 'new' if not (vm / 'identity-ready').exists() else 'existing', shlex.quote(metadata['name']))
+''' % (shlex.quote(user), shlex.quote(key), 'new' if not (vm / 'identity-ready').exists() else 'existing',
+       shlex.quote(metadata['name']), shlex.quote('s|^OMACVM_VM_NAME_B64=.*|OMACVM_VM_NAME_B64=' +
+           base64.b64encode(metadata['vm_name'].encode()).decode() + '|'))
     public = guest_agent(vm, script).decode().strip().splitlines()[-1]
     if not public.startswith('ssh-ed25519 '):
         raise RuntimeError('guest returned no SSH host key')
