@@ -288,12 +288,13 @@ struct SpyScroll<Content: View>: View {
 
 /// The sections of a VM's settings.
 enum SettingsNav {
-    static let items = [
+    static var items: [NavItem] { [
         NavItem(id: "general", title: "General", symbol: "gearshape", rgb: 0x8E8E93),
+    ] + (Product.isUbuntu ? [NavItem(id: "developer", title: "Developer & SSH", symbol: "terminal", rgb: 0xE95420)] : []) + [
         NavItem(id: "display", title: "Display", symbol: "display", rgb: 0x0A84FF),
         NavItem(id: "input", title: "Input", symbol: "keyboard", rgb: 0xFF9F0A),
         NavItem(id: "output", title: "Output", symbol: "speaker.wave.2", rgb: 0xFF375F),
         NavItem(id: "sharing", title: "Sharing & Devices", symbol: "globe", rgb: 0x2DB44E),
         NavItem(id: "storage", title: "Storage & Updates", symbol: "externaldrive", rgb: 0x5E5CE6),
-    ]
+    ] }
 }

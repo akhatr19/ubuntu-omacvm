@@ -419,12 +419,14 @@ final class Runner {
                     "-device", "virtio-net-pci,id=nic0,netdev=fast,mac=\(choice.mac),romfile="]
         }
         // QEMU's user network: the Mac is 10.0.2.2 for the VM; SSH from the Mac on 127.0.0.1.
-        return ["-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:\(c.sshPort)-:22",
+        let published = Product.isUbuntu ? (try? UbuntuNetworking.read(c))?.ports.map(\.qemu) ?? [] : []
+        return ["-netdev", (["user,id=net0", "hostfwd=tcp:127.0.0.1:\(c.sshPort)-:22"] + published).joined(separator: ","),
                 "-device", "virtio-net-pci,netdev=net0,mac=\(choice.mac),romfile="]
     }
 
     func start() throws {
         let c = config
+        if Product.isUbuntu { _ = try UbuntuNetworking.read(c) }
         startAudioThread = Settings.audioThread
         (audioDeviceStart, audioFramesStart) = AudioLatencyWatch.outputNow()
         try FileManager.default.createDirectory(at: c.folder.appendingPathComponent("logs"),
@@ -813,6 +815,11 @@ final class Runner {
             let r = VMKey.ensure(folder: folder, agentPath: agentPath, pingWait: agentDeadline.timeIntervalSinceNow,
                                  running: { kill(pid, 0) == 0 })
             if let line = SSHRepair.logLine(r, stillRunning: kill(pid, 0) == 0) {
+                Task { @MainActor in self?.appendLog(line) }
+            }
+            if Product.isUbuntu, kill(pid, 0) == 0,
+               let line = UbuntuNetworking.apply(c, agent: agentPath, qmp: c.qmpSocket.path) {
+                try? String(line.prefix(2048)).write(to: c.folder.appendingPathComponent("developer-network-status"), atomically: true, encoding: .utf8)
                 Task { @MainActor in self?.appendLog(line) }
             }
             if let on = imePending {

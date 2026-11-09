@@ -265,7 +265,7 @@ def main(argv=None):
     elif command == 'ports':
         state = rt.ensure_up(vm)
         for port in state['ports']:
-            print(f'127.0.0.1:{port["host"]} → Linux:{port["guest"]}')
+            print(f'{port.get("bind", "127.0.0.1")}:{port["host"]} → Linux:{port["guest"]}')
         for port in state['conflicts']:
             print(f'CONFLICT 127.0.0.1:{port} is already in use', file=sys.stderr)
         return int(bool(state['conflicts']))

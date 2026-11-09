@@ -10,6 +10,7 @@ import time
 
 from interop import serve
 from manifest import write_json
+import network
 from runtime import bootstrap, config, disk_busy, guest_agent, live, qemu_plan, sockets, ssh_args, socket_request
 
 
@@ -64,6 +65,9 @@ def connect_master(vm, control):
 def supervise(vm, desktop=False):
     metadata = config(vm)
     settings = metadata['manifest']
+    local = network.load(vm, settings)
+    if any(p['host'] == metadata['ssh_port'] for p in local['ports']) or (local['ssh_lan'] and local['ssh_port'] == metadata['ssh_port']):
+        raise ValueError('published ports must differ from the private management SSH port')
     run_dir = sockets(vm)
     owner = open(run_dir / 'owner.lock', 'a')
     try:
@@ -127,7 +131,9 @@ def supervise(vm, desktop=False):
         if desktop:
             guest_agent(vm, 'systemctl start --no-block gdm3.service')
         forwards = {}
-        required = {p['host']: p['guest'] for p in settings['ports']}
+        required = {p['host']: (p['guest'], '0.0.0.0' if p['lan'] else '127.0.0.1') for p in local['ports']}
+        if local['ssh_lan']:
+            required[local['ssh_port']] = (22, '0.0.0.0')
         idle_since = time.monotonic()
         while process.poll() is None:
             if master.poll() is not None:
@@ -150,26 +156,28 @@ def supervise(vm, desktop=False):
                 candidate = int(value)
                 if 1024 <= candidate <= 65535:
                     discovered.setdefault(candidate, '127.0.0.1')
-            desired = {h: (g, discovered.get(g, '127.0.0.1')) for h, g in required.items()}
-            if settings['auto_ports']:
-                desired.update({p: (p, address) for p, address in discovered.items() if p != port and p not in required})
+            # Keep a guest with many listeners from consuming unlimited host forwards.
+            discovered = dict(sorted(discovered.items())[:64])
+            desired = {h: (g, discovered.get(g, '127.0.0.1'), bind) for h, (g, bind) in required.items()}
+            if local['auto_ports']:
+                desired.update({p: (p, address, '127.0.0.1') for p, address in discovered.items() if p != port and p not in required})
             conflicts = []
-            for host, (guest, address) in list(forwards.items()):
-                if desired.get(host) != (guest, address):
-                    subprocess.run(['ssh', '-F', '/dev/null', '-S', control, '-O', 'cancel', '-L', f'127.0.0.1:{host}:{address}:{guest}', '-p', str(port), 'root@127.0.0.1'],
+            for host, (guest, address, bind) in list(forwards.items()):
+                if desired.get(host) != (guest, address, bind):
+                    subprocess.run(['ssh', '-F', '/dev/null', '-S', control, '-O', 'cancel', '-L', f'{bind}:{host}:{address}:{guest}', '-p', str(port), 'root@127.0.0.1'],
                         capture_output=True)
                     del forwards[host]
-            for host, (guest, address) in desired.items():
+            for host, (guest, address, bind) in desired.items():
                 if host in forwards:
                     continue
                 request = ['ssh', '-F', '/dev/null', '-S', control, '-O', 'forward', '-o', 'ExitOnForwardFailure=yes',
-                           '-L', f'127.0.0.1:{host}:{address}:{guest}', '-p', str(port), 'root@127.0.0.1']
+                           '-L', f'{bind}:{host}:{address}:{guest}', '-p', str(port), 'root@127.0.0.1']
                 result = subprocess.run(request, capture_output=True)
                 if result.returncode == 0:
-                    forwards[host] = (guest, address)
+                    forwards[host] = (guest, address, bind)
                 else:
                     conflicts.append(host)
-            state.update(ports=[{'host': h, 'guest': g, 'address': address} for h, (g, address) in sorted(forwards.items())], conflicts=conflicts)
+            state.update(ports=[{'host': h, 'guest': g, 'address': address, 'bind': bind} for h, (g, address, bind) in sorted(forwards.items())], conflicts=conflicts)
             write_json(state_file, state)
             leases = list((run_dir / 'leases').glob('*')) if (run_dir / 'leases').exists() else []
             active = discovered or containers.strip() or any(f': {metadata["user"]}@' in line for line in sessions.splitlines())
@@ -181,7 +189,7 @@ def supervise(vm, desktop=False):
                     lease.unlink(missing_ok=True)
             if active:
                 idle_since = time.monotonic()
-            minutes = settings['idle_minutes']
+            minutes = local['idle_minutes']
             if minutes and not desktop and time.monotonic() - idle_since >= minutes * 60:
                 socket_request(run_dir / 'qmp', 'system_powerdown')
                 idle_since = time.monotonic()

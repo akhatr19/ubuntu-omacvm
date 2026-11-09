@@ -38,8 +38,18 @@ enum DeveloperActions {
 
 struct DeveloperRow: View {
     @ObservedObject var state: AppState
+    @State private var network = false
+    @State private var environments = false
 
     var body: some View {
+        SettingRow(title: "SSH & networking", subtitle: "Independent SSH, authorized public keys, LAN access and TCP port forwarding.", probe: "ubuntu-networking") {
+            Button("Configure…") { network = true }
+        }
+        .sheet(isPresented: $network) { DeveloperSettingsView(state: state, config: state.config) }
+        SettingRow(title: "Environments", subtitle: "Create and manage multiple Ubuntu environments. Headless VMs can run at the same time.", probe: "ubuntu-environments") {
+            Button("Manage…") { environments = true }
+        }
+        .sheet(isPresented: $environments) { DeveloperEnvironmentsView(state: state) }
         if DeveloperActions.name(state.config) != nil {
             SettingRow(title: "Developer environment", subtitle: "Linux projects, editor connections and localhost ports use the same environment.", probe: "ubuntu-developer") {
                 ForEach(["shell", "code", "ports", "stop"], id: \.self) { action in
@@ -50,12 +60,15 @@ struct DeveloperRow: View {
                 }
             }
         } else {
-            SettingRow(title: "Developer environments", subtitle: "Create isolated environments with uvm.json and uvm.lock.json. Copy the bundled CLI path to get started.", probe: "ubuntu-developer") {
+            SettingRow(title: "Developer CLI (uvm)", subtitle: "Optional command line tools. The GUI controls above do not require a CLI installation.", probe: "ubuntu-developer") {
                 Button("Copy CLI Path") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(DeveloperActions.cli.path, forType: .string)
                 }
             }
+        }
+        SettingRow(title: "App location", subtitle: Bundle.main.bundleURL.path, probe: "ubuntu-app-location") {
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
         }
     }
 }

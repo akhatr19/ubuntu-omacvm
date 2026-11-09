@@ -13,6 +13,7 @@ import sys
 import time
 
 from manifest import digest, fingerprint, write_json
+import network
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME = Path(os.environ.get('UVM_HOME', Path.home() / 'Library/Application Support/UbuntuVM')).expanduser().resolve()
@@ -184,6 +185,11 @@ cat /etc/ssh/ssh_host_ed25519_key.pub
        shlex.quote(metadata['name']), shlex.quote('s|^OMACVM_VM_NAME_B64=.*|OMACVM_VM_NAME_B64=' +
            base64.b64encode(metadata['vm_name'].encode()).decode() + '|'))
     public = guest_agent(vm, script).decode().strip().splitlines()[-1]
+    if not (vm / 'identity-ready').exists() or (vm / 'developer-network.json').exists():
+        settings = network.load(vm, metadata['manifest'])
+        encoded = base64.b64encode(settings['public_keys'].encode()).decode()
+        guest_agent(vm, 'python3 -c ' + shlex.quote(Path(network.__file__).read_text()) +
+                    ' --guest ' + shlex.quote(user) + ' ' + shlex.quote(encoded))
     if not public.startswith('ssh-ed25519 '):
         raise RuntimeError('guest returned no SSH host key')
     (vm / 'known_hosts').write_text(f'[127.0.0.1]:{state["ssh_port"]} {public}\n')

@@ -5,6 +5,42 @@ the editor, browser and terminal. It reuses UbuntuVM's accelerated QEMU,
 Vulkan/OpenCL drivers and free-page reporting. No Docker Desktop is required.
 The desktop is optional; development environments normally boot without GNOME.
 
+## GUI controls
+
+Open **Developer & SSH** in the sidebar of any Ubuntu VM. **Configure…** shows
+its private SSH command, additional authorized public keys, LAN SSH publication,
+and explicit TCP forwarding rules. Stop the VM before saving; settings apply
+at its next start. Paste the other device's public `.pub` key, never a private key.
+Existing guest keys and management SSH remain intact.
+
+For LAN access, enable **Allow SSH from other devices**, choose a unique LAN
+port for each VM, and copy the displayed command using your Mac's LAN address.
+For example, two VMs can publish SSH on ports 2222 and 2223. This is NAT port
+publication: each VM is a separate Linux system, but does not obtain its own
+router-assigned LAN IP. The Mac firewall and network must allow the connection.
+TCP forwards have separate Mac/guest ports and a **LAN** toggle. Unchecked rules
+and automatic developer-port discovery bind only to localhost. Turn off the
+experimental Fast network before using this NAT publication.
+
+**Manage…** lists desktop and developer VMs, their resource allocations and
+running state. Start or stop headless developer environments independently,
+open a terminal or VS Code, verify a lock, or select a VM's main settings.
+Several headless VMs can run concurrently. The launcher controls one desktop
+at a time; opening a desktop from a headless boot requires a restart and a
+confirmation so running work is not stopped silently.
+
+**New Environment…** chooses the project, instance name, frozen base and
+Python/Node/Rust/Docker profiles. An existing project manifest is reused;
+otherwise the GUI creates the manifest and initial lock. **Build Base from
+Ubuntu ISO…** creates a frozen bundle without requiring command line setup.
+Build progress and errors are shown in the dialog. The project manifest and
+lock are still ordinary files suitable for version control.
+
+Local network overrides live in the VM's `developer-network.json`, outside its
+package lock. These host-specific LAN permissions and public keys are not
+inherited by an exported/imported environment. Imports clear the inherited
+GUI-managed key file while retaining a fresh management identity.
+
 ## Create and reproduce a project
 
 Use the `uvm` beside `omacvm` in a checkout, or the bundled
@@ -129,8 +165,8 @@ macOS. Containers and package profiles are ARM64; x86 emulation is not provided.
 
 ## Localhost and Mac integration
 
-Forwards bind **127.0.0.1 only**, never the LAN. IPv4 and IPv6-loopback guest
-listeners and published Docker TCP ports are discovered periodically. Explicit
+Forwards bind **127.0.0.1 by default**. Explicit GUI LAN rules bind to all Mac IPv4 interfaces. IPv4 and IPv6-loopback guest
+listeners and published Docker TCP ports are discovered periodically (up to 64 automatic ports). Explicit
 mappings stay configured even before a server starts. Conflicts are reported,
 never resolved by terminating another Mac process. Stop the VM to remove its
 forwards. An idle timeout treats dev servers, SSH sessions and running CLI jobs
