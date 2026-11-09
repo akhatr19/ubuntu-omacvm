@@ -373,7 +373,7 @@ struct SetupView: View {
         NavItem(id: "resources", title: "Resources", symbol: "cpu", rgb: 0x0A84FF),
         NavItem(id: "features", title: "Features", symbol: "switch.2", rgb: 0x2DB44E),
         NavItem(id: "storage", title: "Storage", symbol: "externaldrive", rgb: 0x5E5CE6),
-    ]
+    ].filter { !Product.isUbuntu || $0.id != "features" }
 
     private var userOK: Bool {
         state.config.user.range(of: "^[a-z_][a-z0-9_-]{0,31}$", options: .regularExpression) != nil
@@ -464,7 +464,9 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 0) {
             SectionTitle(text: "Resources")
             Card {
-                SettingRow(title: "Resources", subtitle: "\(Mac.tier(tier).cpus) CPUs and \(Mac.tier(tier).memoryGB) GB memory of this Mac's \(Mac.cores) and \(Mac.memoryGB) GB. More later in the VM's settings.",
+                SettingRow(title: "Resources", subtitle: Product.isUbuntu && Mac.tier(tier).memoryGB < 6
+                           ? "Ubuntu's installer needs at least 6 GB of RAM. Choose a larger resource tier."
+                           : "\(Mac.tier(tier).cpus) CPUs and \(Mac.tier(tier).memoryGB) GB memory of this Mac's \(Mac.cores) and \(Mac.memoryGB) GB. More later in the VM's settings.",
                            probe: "resources") {
                     Picker("Resources", selection: $tier) {
                         ForEach(0..<4) { Text(Mac.tierNames[$0]).tag($0) }
