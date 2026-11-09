@@ -136,6 +136,10 @@ if [[ -z $KB && $TYPE == app ]] && (( NAMED )) && d=$(app_dir "$VM" 2>/dev/null)
 fi
 [[ -n $KB ]] || KB=$("$R/src/keyboard/mac-layout.sh")
 probe=$(vm_probe "$IP")
+if grep -qx 'OMACVM_GUEST_OS=ubuntu' <<<"$probe"; then
+  echo "Ubuntu uses app/scripts/apply-vm.sh VM_DIR --no-mac; Omarchy feature changes were not applied" >&2
+  exit 2
+fi
 [[ -n $U ]] || U=$(sed -n 's/^OMACVM_USER=//p' <<<"$probe")
 [[ -n $U ]] || die "no desktop user in '$VM' (pass --user NAME)"
 # It goes into commands for the VM's shell: a plain user name only.

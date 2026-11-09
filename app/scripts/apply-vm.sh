@@ -29,6 +29,12 @@ if (( rc == 2 )); then
 elif (( rc != 0 )); then
   die "$NAME does not answer over SSH (127.0.0.1:$SSH_PORT): $SSH_WHY."
 fi
+if [[ $(cat "$VM_DIR/guest-os" 2>/dev/null) == ubuntu ]]; then
+  COPYFILE_DISABLE=1 tar --no-xattrs -C "$OMACVM_SRC" -czf - . |
+    vssh "mkdir -p /usr/local/share/omacvm; tar --no-same-owner -xzf - -C /usr/local/share/omacvm"
+  vssh "bash /usr/local/share/omacvm/ubuntu/guest/install.sh '$VM_USER'"
+  exit
+fi
 
 # A copy of src/ only: the Mac installers build next to their sources, never
 # inside the app (or the source tree).

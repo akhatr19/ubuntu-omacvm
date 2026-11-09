@@ -32,6 +32,10 @@
 # it yet builds it when the feature goes on.
 # Needs, for the bridge, the token from the Mac in ~/.config/omacvm-bridge/token.
 set -euo pipefail
+if [[ -f /etc/os-release ]] && (source /etc/os-release; [[ $ID == ubuntu ]]); then
+  echo "Ubuntu uses ubuntu/guest/install.sh DESKTOP_USER; the Omarchy installer was not run" >&2
+  exit 2
+fi
 R=$(cd "$(dirname "$0")/.." && pwd)
 U=""; KB="us"; TYPE=app; CLOCK_FMT=""; NAME64=""; ONLY=""; STRICT=""; SOFT=(); GRAPHICS=""; KERNEL_NEW=keep
 FEATURES=(); declare -A F=() NEEDS=() SET=()

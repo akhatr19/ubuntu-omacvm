@@ -566,6 +566,10 @@ final class Runner {
         if usbOn { env["OMACVM_USB_REQUEST"] = USBRun.requestName() }
         // The VM's graphics memory on the Mac, for this app and omacvm check (GPUMemory).
         env["OMACVM_GPU_MEMORY_STATUS"] = GPUMemory.file(for: c).path
+        if (try? String(contentsOf: c.folder.appendingPathComponent("guest-os"), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) == "ubuntu" {
+            env["OMACVM_GPU_MEMORY_DESKTOP"] = "gnome-shell"
+        }
         try? FileManager.default.removeItem(at: GPUMemory.file(for: c))
         // QEMU's reclaim fix says there when macOS keeps the pages the VM gives
         // back (GPUMemoryWatch turns its give-back while macOS compresses off).
