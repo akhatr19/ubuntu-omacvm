@@ -62,6 +62,8 @@ inputs or outputs differ. `uvm verify` checks drift; `uvm provision` reruns the
 locked provisioning on an existing environment. Provisioning scripts should
 be idempotent. Use `npm ci`, `pip --require-hashes`, `cargo --locked` and pinned
 download checksums inside those scripts. Scripts run from `~/Projects/NAME`.
+Script bytes are checked again when copied and executed; edits during a build
+fail validation before a new lock is published.
 
 **The frozen base is the reproducible input.** Rebuilding a base from the same
 ISO may retrieve newer installation dependencies or Chrome. The resulting base
@@ -109,6 +111,8 @@ Desktop autologin is intended for these local developer environments; set
 `desktop_autologin` false to require a password you choose. SSH agent forwarding
 is opt-in, including `uvm run --agent`; a trusted Linux process can use the
 forwarded agent while that connection is active. Keys are not copied into Linux.
+Private SSH checkouts also need trusted server host keys. A hashed provision
+script can install pinned `known_hosts` entries before checking out a private repository.
 
 The background supervisor owns QEMU independently of Terminal or the launcher
 app. Closing a terminal does not stop Linux. `uvm desktop` gracefully stops a

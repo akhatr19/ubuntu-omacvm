@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from manifest import check_lock, load
+from manifest import check_lock, load, read_script
 
 
 class ManifestTests(unittest.TestCase):
@@ -41,6 +41,16 @@ class ManifestTests(unittest.TestCase):
         script.write_text('echo second\n')
         with self.assertRaises(ValueError):
             check_lock(lock, self.read()[1])
+
+    def test_edit_during_build_cannot_change_the_bytes_sent_to_linux(self):
+        script = self.root / 'setup.sh'
+        script.write_text('echo first\n')
+        self.data['provision'] = ['setup.sh']
+        expected = self.read()[1]['scripts']['setup.sh']
+        self.assertEqual(read_script(script, expected), b'echo first\n')
+        script.write_text('echo edited while Ubuntu boots\n')
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            read_script(script, expected)
 
     def test_scripts_cannot_escape_project(self):
         outside = self.root.parent / (self.root.name + '-outside')

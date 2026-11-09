@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import shlex
 
-from manifest import check_lock, write_json
+from manifest import check_lock, load, read_script, write_json
 from runtime import ROOT, config, run, ssh, ssh_args
 
 
@@ -98,7 +98,7 @@ fi
 '''
         run(ssh_args(vm, agent=settings['ssh_agent']) + [command])
     for path in settings['provision']:
-        data = (Path(manifest_path).parent / path).read_bytes()
+        data = read_script(Path(manifest_path).parent / path, inputs['scripts'][path])
         target = '/tmp/uvm-provision-' + inputs['scripts'][path] + '.sh'
         command = f'umask 077; cat > {target}; cd {shlex.quote(project)} && /bin/bash {target}; status=$?; rm -f {target}; exit $status'
         run(ssh_args(vm, agent=settings['ssh_agent']) + [command], input=data)
@@ -115,5 +115,6 @@ fi
         requested.append(name + '=' + version)
     result = {**inputs, 'runtime_commit': metadata['runtime_commit'], 'runtime_sha256': metadata['runtime_sha256'],
               'apt_requested': requested, 'apt_inventory': actual, 'images': images}
+    check_lock(result, load(manifest_path)[1])
     write_json(vm / 'uvm.lock.json', result)
     return result

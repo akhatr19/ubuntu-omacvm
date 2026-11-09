@@ -23,6 +23,14 @@ def digest(path):
     return h.hexdigest()
 
 
+def read_script(path, expected):
+    with open(path, 'rb') as stream:
+        data = stream.read(1024 * 1024 + 1)
+    if len(data) > 1024 * 1024 or hashlib.sha256(data).hexdigest() != expected:
+        raise ValueError(f'provisioning script changed during setup: {path}')
+    return data
+
+
 def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 

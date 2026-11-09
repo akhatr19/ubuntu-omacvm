@@ -14,7 +14,7 @@ import sys
 
 import bundles
 import integrate
-from manifest import SCHEMA, check_lock, load, write_json
+from manifest import SCHEMA, check_lock, load, read_script, write_json
 from provision import apply, verify
 import runtime as rt
 
@@ -126,7 +126,7 @@ def create(path, name=None, require_lock=False, update=False):
         for script in settings['provision']:
             target = definition / script
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(path.parent / script, target)
+            target.write_bytes(read_script(path.parent / script, inputs['scripts'][script]))
         metadata = rt.config(vm)
         metadata['project_root'] = str(path.parent)
         write_json(vm / 'uvm-env.json', metadata)
