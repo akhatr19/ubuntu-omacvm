@@ -38,6 +38,29 @@ def listening_ports(output):
     return ports
 
 
+def connect_master(vm, control):
+    args = ssh_args(vm, root=True, allow_starting=True)
+    args[-1:-1] = ['-M', '-S', control, '-o', 'ControlPersist=no', '-N']
+    process = None
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        if process is None or process.poll() is not None:
+            Path(control).unlink(missing_ok=True)
+            process = subprocess.Popen(args, stdin=subprocess.DEVNULL)
+        try:
+            result = subprocess.run(['ssh', '-F', '/dev/null', '-S', control, '-O', 'check', 'root@127.0.0.1'],
+                                    capture_output=True, timeout=5)
+        except subprocess.TimeoutExpired:
+            continue
+        if result.returncode == 0:
+            return process, args
+        time.sleep(.25)
+    if process and process.poll() is None:
+        process.terminate()
+        process.wait(timeout=10)
+    raise TimeoutError('Ubuntu did not finish starting its SSH server')
+
+
 def supervise(vm, desktop=False):
     metadata = config(vm)
     settings = metadata['manifest']
@@ -97,14 +120,12 @@ def supervise(vm, desktop=False):
                 time.sleep(.5)
             else:
                 raise TimeoutError('new environment did not reboot with its unique identity')
+        control = str(run_dir / 'ssh-control')
+        master, master_args = connect_master(vm, control)
         state['ready'] = True
         write_json(state_file, state)
         if desktop:
             guest_agent(vm, 'systemctl start --no-block gdm3.service')
-        control = str(run_dir / 'ssh-control')
-        master_args = ssh_args(vm, root=True)
-        master_args[-1:-1] = ['-M', '-S', control, '-o', 'ControlPersist=no', '-N']
-        master = subprocess.Popen(master_args, stdin=subprocess.DEVNULL)
         forwards = {}
         required = {p['host']: p['guest'] for p in settings['ports']}
         idle_since = time.monotonic()

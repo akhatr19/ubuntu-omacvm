@@ -191,9 +191,9 @@ cat /etc/ssh/ssh_host_ed25519_key.pub
     (vm / 'identity-ready').touch(mode=0o600)
 
 
-def ssh_args(vm, root=False, tty=False, agent=False):
+def ssh_args(vm, root=False, tty=False, agent=False, allow_starting=False):
     state = live(vm)
-    if not state or not state.get('ready'):
+    if not state or (not state.get('ready') and not allow_starting):
         raise ValueError('environment is not running; use uvm up')
     user = 'root' if root else config(vm)['user']
     known = str(vm / 'known_hosts').replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%')
