@@ -14,6 +14,8 @@ Build a separately named app with `app/scripts/build-app.sh --name UbuntuVM
 --id org.omacvm.ubuntu`, and point its VMs folder at `~/UbuntuVMs`. The
 development copy is kept separate from upstream OmacVM; upstream releases do
 not contain this Ubuntu port.
+Create additional Ubuntu VMs through the command below; the upstream
+graphical creation wizard still creates Omarchy VMs.
 
 Download `ubuntu-26.10-desktop-arm64.iso` from
 [Ubuntu's official release directory](https://cdimage.ubuntu.com/ubuntu/releases/26.10/release/).

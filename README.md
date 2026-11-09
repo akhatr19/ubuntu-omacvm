@@ -1,3 +1,5 @@
+> **Ubuntu port:** this fork adds Ubuntu Desktop ARM64 with accelerated graphics, WebGPU/OpenCL, video decoding and memory reclamation. Start with [the Ubuntu setup guide](docs/ubuntu.md); the upstream Omarchy instructions below still apply to the original route.
+
 <h1 align="center">OmacVM</h1>
 
 <h3 align="center">Omarchy on your Mac, in its own app, feeling native</h3>
