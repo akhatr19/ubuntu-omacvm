@@ -12,6 +12,14 @@ import runtime
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_concurrent_cold_start_waits_for_the_existing_supervisor(self):
+        ready = {'qemu_pid': 123, 'ready': True, 'mode': 'headless'}
+        with mock.patch('runtime.live', side_effect=[{'qemu_pid': 123, 'ready': False}, ready]), \
+             mock.patch('runtime.subprocess.Popen') as spawn, mock.patch('runtime.disk_busy') as busy:
+            self.assertEqual(runtime.ensure_up(Path('/unused')), ready)
+            spawn.assert_not_called()
+            busy.assert_not_called()
+
     def test_stop_waits_for_supervisor_before_desktop_restart(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

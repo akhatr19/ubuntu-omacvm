@@ -217,19 +217,22 @@ def ensure_up(vm, desktop=False):
             current = None
         else:
             return current
-    if disk_busy(vm):
-        raise ValueError('this environment is open in the desktop app; stop it there before headless use')
-    run_dir = sockets(vm)
-    log = open(vm / 'logs/developer.log', 'ab')
-    process = subprocess.Popen([sys.executable, str(Path(__file__).with_name('uvm.py')), '_supervise', str(vm),
-                                *(['--desktop'] if desktop else [])],
-                               stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+    process = None
+    if not current:
+        if disk_busy(vm):
+            raise ValueError('this environment is open in the desktop app; stop it there before headless use')
+        log = open(vm / 'logs/developer.log', 'ab')
+        process = subprocess.Popen([sys.executable, str(Path(__file__).with_name('uvm.py')), '_supervise', str(vm),
+                                    *(['--desktop'] if desktop else [])],
+                                   stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
     end = time.monotonic() + 240
     while time.monotonic() < end:
         current = live(vm)
         if current and current.get('ready'):
+            if desktop and current['mode'] != 'desktop':
+                return ensure_up(vm, desktop=True)
             return current
-        if process.poll() is not None and not current:
+        if process is not None and process.poll() is not None and not current:
             raise RuntimeError(f'VM startup failed; see {vm / "logs/developer.log"}')
         time.sleep(.25)
     raise TimeoutError(f'VM did not become ready; see {vm / "logs/developer.log"}')
