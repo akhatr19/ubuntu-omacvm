@@ -96,6 +96,14 @@ class Place(unittest.TestCase):
                          f"file://{self.share}/{ID}/a.txt\r\nfile://{self.share}/{ID}/b.bin\r\n")
         self.assertEqual(os.listdir(self.dl), [])
 
+    def test_gnome_downloads_does_not_call_wayland_helper(self):
+        self.fake_helper("app", 0)
+        to, why = D.place(self.drop(), 5, helper=str(self.helper), share=self.share,
+                          target=self.dl, downloads_only=True)
+        self.assertEqual((to, why), ("downloads", "delivered to Downloads"))
+        self.assertFalse(self.calls.exists())
+        self.assertEqual((self.dl / "a.txt").read_bytes(), (self.share / ID / "a.txt").read_bytes())
+
     def test_no_taker_downloads(self):
         self.fake_helper("none", 3)
         to, why = self.run_place()

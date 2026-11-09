@@ -5,6 +5,7 @@ U=${1:?desktop user}
 H=$(getent passwd "$U" | cut -d: -f6)
 R=$(cd "$(dirname "$0")/../.." && pwd)
 A=$R/app/guest
+source /etc/omacvm/env
 source "$R/guest/home-files.sh"
 install -Dm644 "$A/70-omacvm-clipboard.rules" /etc/udev/rules.d/70-omacvm-clipboard.rules
 udevadm control --reload-rules
@@ -26,14 +27,17 @@ install -d "/usr/share/gnome-shell/extensions/$EXT"
 install -m644 "$R/ubuntu/guest/clipboard-extension/"* "/usr/share/gnome-shell/extensions/$EXT/"
 # GSettings changes and user-service operations run as the desktop user.
 # Do not replace the person's existing enabled-extension list.
-home_run env -u XDG_RUNTIME_DIR -u DBUS_SESSION_BUS_ADDRESS dbus-run-session -- python3 - <<'PY'
+home_run env -u XDG_RUNTIME_DIR -u DBUS_SESSION_BUS_ADDRESS dbus-run-session -- python3 - "${OMACVM_FEATURE_gestures:-off}" <<'PY'
+import sys
 from gi.repository import Gio
+if sys.argv[1] == "on":
+    Gio.Settings.new("org.gnome.desktop.peripherals.touchpad").set_boolean("tap-to-click", False)
 settings = Gio.Settings.new('org.gnome.shell')
 extensions = settings.get_strv('enabled-extensions')
 name = 'clipboard@ubuntu.omacvm.org'
 if name not in extensions:
     settings.set_strv('enabled-extensions', extensions + [name])
-    Gio.Settings.sync()
+Gio.Settings.sync()
 PY
 systemctl daemon-reload
 systemctl enable --now omacvm-mac-folder.service
@@ -43,6 +47,29 @@ if [[ -d /run/user/$(id -u "$U") ]]; then
     systemctl --user daemon-reload
 fi
 
-source /etc/omacvm/env
 "$R/battery/guest/install.sh" "${OMACVM_FEATURE_battery:-off}"
 "$R/camera/guest/install.sh" "$U" app "${OMACVM_FEATURE_camera:-off}"
+if [[ ${OMACVM_FEATURE_drag_drop:-off} == on ]]; then
+  for name in drop drop-share; do install -m755 "$R/drop/guest/omacvm-$name" /usr/local/bin/; done
+  install -m644 "$R/drop/guest/omacvm-drop-share.service" /etc/systemd/system/
+  install -m644 "$R/drop/guest/omacvm-drop.service" /etc/systemd/user/
+  install -Dm644 "$R/drop/guest/70-omacvm-drop.rules" /etc/udev/rules.d/70-omacvm-drop.rules
+  install -d /etc/systemd/user/omacvm-drop.service.d
+  printf '[Service]\nEnvironment=OMACVM_DROP_DOWNLOADS_ONLY=1\n' > /etc/systemd/user/omacvm-drop.service.d/ubuntu.conf
+  systemctl daemon-reload
+  systemctl enable --now omacvm-drop-share.service
+  systemctl --global enable omacvm-drop.service
+else
+  "$R/drop/guest/install.sh" "$U" off
+fi
+if [[ ${OMACVM_FEATURE_gestures:-off} == on ]]; then
+  apt-get install -y --no-install-recommends python3-evdev
+  install -m755 "$R/gestures/guest/omacvm-gestures" /usr/local/bin/
+  install -m644 "$R/gestures/guest/omacvm-gestures.service" /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable --now omacvm-gestures.service
+else
+  systemctl disable --now omacvm-gestures.service 2>/dev/null || true
+fi
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=virtio-ports

@@ -549,4 +549,14 @@ check(g.swipe_out_side(st, 0.2 * w, 0, w) == "left" and g.swipe_out_side(st, -0.
 check(g.swipe_out_side(None, 0.2 * w, 0, w) is None and g.swipe_out_side({}, 0.2 * w, 0, w) is None,
       "rule: no workspaces known: nothing")
 check(g.swipe_out_side(dict(st, ids=[]), 0.2 * w, 0, w) == "left", "rule: no list (only the active one): its own edge")
+os.environ["OMACVM_GUEST_OS"] = "ubuntu"
+g.SWIPE = g.SwipeOut()
+sent = []
+g.SWIPE.send = sent.append
+g.handle([b"X", b"on", b"2"], None, None, None)
+check(sent == [b"G 3lr\nE - -\n"] and g.SWIPE.watcher is None,
+      "GNOME advertises native swipes without a Hyprland watcher")
+g.handle([b"X", b"off"], None, None, None)
+check(sent[-1] == b"G -\nE - -\n", "GNOME stops advertising workspace swipes when released")
+os.environ.pop("OMACVM_GUEST_OS")
 sys.exit(1 if fails else 0)

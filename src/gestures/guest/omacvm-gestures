@@ -1439,7 +1439,13 @@ def handle(p, pad, keys, glide):
         if state == "esc":
             escape_notice(p[2].decode() if len(p) > 2 else None)
     elif p[0] == b"X":
-        SWIPE.set(p[1] == b"on", int(p[2]) if len(p) > 2 and p[2].isdigit() else 1)
+        if os.environ.get("OMACVM_GUEST_OS") == "ubuntu":
+            # GNOME handles the virtual trackpad's native three-finger gestures.
+            # No Hyprland workspace queries or swipe-out interception.
+            if SWIPE.send:
+                SWIPE.send(b"G 3lr\nE - -\n" if p[1] == b"on" else b"G -\nE - -\n")
+        else:
+            SWIPE.set(p[1] == b"on", int(p[2]) if len(p) > 2 and p[2].isdigit() else 1)
     elif p[0] == b"Q":
         answer_focus(SWIPE.send)
 

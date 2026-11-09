@@ -50,6 +50,7 @@ HELPER = os.environ.get("OMACVM_DROP_AT", "/usr/local/lib/omacvm/omacvm-drop-at"
 RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
 STATUS = RUNTIME / "omacvm/drop"
 HELLO_EVERY = 15.0
+DOWNLOADS_ONLY = os.environ.get("OMACVM_DROP_DOWNLOADS_ONLY") == "1"
 LATE_MS = 1500          # later than this after the drop: Downloads
 MAX_LINE = 64 * 1024
 MAX_ITEMS = 256
@@ -161,7 +162,7 @@ def notify(text):
     run(["notify-send", "-a", "OmacVM", "-i", "folder-download", "Files from the Mac", text], 5)
 
 
-def place(drop, received_ms, locked=session_locked, helper=HELPER, share=SHARE, target=None):
+def place(drop, received_ms, locked=session_locked, helper=HELPER, share=SHARE, target=None, downloads_only=DOWNLOADS_ONLY):
     """Where one drop goes: (to, why). `received_ms`: this service's own
     time since the line came (added to the Mac's age)."""
     folder = share / drop["id"]
@@ -174,7 +175,9 @@ def place(drop, received_ms, locked=session_locked, helper=HELPER, share=SHARE, 
         return "failed", "the drop share cannot be read"
     late = drop["age"] + received_ms > LATE_MS
     why = None
-    if late:
+    if downloads_only:
+        why = "delivered to Downloads"
+    elif late:
         why = f"late ({drop['age'] + received_ms} ms after the drop)"
     elif locked():
         why = "the screen is locked"

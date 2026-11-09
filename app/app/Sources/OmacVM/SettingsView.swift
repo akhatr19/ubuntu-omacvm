@@ -235,10 +235,14 @@ struct SettingsSections: View {
                 KeyboardRow(state: state, preview: preview?.keyNote)
                 if Product.isUbuntu {
                     SettingRow(title: "Input methods", subtitle: "Configure languages and input sources in Ubuntu Settings → Keyboard.", probe: "ubuntu-input")
+                    UbuntuFeatureRow(state: state, feature: "gestures", title: "Trackpad gestures",
+                                     detail: "Three-finger swipes in full screen use GNOME workspaces and Overview. Installs the Mac gestures helper; macOS will ask for Accessibility and Input Monitoring.")
                 } else {
                     MacIMERow(state: state)
                 }
-                SwipeOutRow(tick: state.tick, gesturesOff: VMRecord.isOff("gestures", folder: state.config.folder))
+                if !Product.isUbuntu {
+                    SwipeOutRow(tick: state.tick, gesturesOff: VMRecord.isOff("gestures", folder: state.config.folder))
+                }
                 ShareKeyboardRow(tick: state.tick)
             }
         }
@@ -255,7 +259,10 @@ struct SettingsSections: View {
             SectionTitle(text: "Sharing & Devices")
             Card {
                 MacFolderRow(state: state)
-                if !Product.isUbuntu { DragDropRow(state: state) }
+                if Product.isUbuntu {
+                    UbuntuFeatureRow(state: state, feature: "drag-drop", title: "Finder drops",
+                                     detail: "Drop files onto the VM window to copy them into Ubuntu's Downloads folder. Existing files are kept.")
+                } else { DragDropRow(state: state) }
                 USBRow(state: state)
                 FastNetworkRow(state: state)
             }

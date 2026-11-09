@@ -24,6 +24,11 @@ check "shared folder service" systemctl is-enabled --quiet omacvm-mac-folder
 source /etc/omacvm/env
 [[ ${OMACVM_FEATURE_battery:-off} != on ]] || check "battery module" test -d /sys/module/omacvm_battery
 [[ ${OMACVM_FEATURE_camera:-off} != on ]] || check "camera device" test -c /dev/video42
+if [[ ${OMACVM_FEATURE_drag_drop:-off} == on ]]; then
+  check "Finder drop agent" systemctl --global is-enabled --quiet omacvm-drop
+  check "Finder drop share" mountpoint -q /run/omacvm/drop
+fi
+[[ ${OMACVM_FEATURE_gestures:-off} != on ]] || check "virtual trackpad agent" systemctl is-active --quiet omacvm-gestures
 check "WebGPU launcher" test -x /usr/local/bin/omacvm-browser-webgpu
 echo "Browser WebGPU dispatch and decoded playback require separate runtime tests; launchers alone do not verify them."
 exit "$((fails != 0))"

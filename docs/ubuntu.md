@@ -20,8 +20,9 @@ The output path must be new. The script checks that the runtime's source
 commit matches and that this fork has not changed its runtime patches,
 compiles the launcher, packages the Ubuntu sources and orange terminal icon,
 and ad-hoc signs the result. Xcode is required. Its bundle ID is
-`org.omacvm.ubuntu`; its default VM folder is `~/UbuntuVMs`. Install and
-permission prompts remain macOS's normal human choices. Upstream OmacVM app
+`org.omacvm.ubuntu`; its default VM folder is `~/UbuntuVMs`. The first launch offers **Install and Open** to copy the app into Applications;
+there is no try/skip-install path. Previous skip choices are ignored.
+Permission prompts remain macOS's normal human choices. Upstream OmacVM app
 updates are disabled for this fork so they cannot replace the Ubuntu port.
 
 The app's **New VM** screen accepts the official Ubuntu ISO, user name,
@@ -107,8 +108,11 @@ and after allocating/freeing guest memory, including macOS's reclaim log.
   QEMU. Changes are temporary, preserving Ubuntu's saved monitor settings.
   It responds to hotplug/layout events instead of polling while idle.
 - **Files:** choose **Mac folder** in the app; it mounts at `~/Mac` next boot.
-  Only the selected folder is exposed. Clipboard is for text/images; Finder
-  drag-and-drop is not ported.
+  Only the selected folder is exposed. **Finder drops** copy files dropped on
+  the VM window into Ubuntu's Downloads folder, using numbered names when a
+  file already exists. New VMs enable this by default. The staging share is
+  read-only; files only, up to 256 per drop. GNOME does not expose the
+  Hyprland protocols for app-target drops, so this port uses Downloads.
 - **Media/audio:** the upstream MPRIS agent provides Now Playing and media
   controls; host output latency is applied to PipeWire for video sync.
 - **Battery/camera:** the existing battery module and v4l2loopback camera
@@ -119,26 +123,38 @@ and after allocating/freeing guest memory, including macOS's reclaim log.
   updates the Ubuntu integrations without invoking the Omarchy installer or
   replacing the Mac's helpers.
 
-For an existing Ubuntu VM, change the optional battery/camera settings through
+For an existing Ubuntu VM, change the optional device/drop settings through
 the installer while the VM is shut down (do not edit its feature record):
 
 ```bash
 app/scripts/update-vm.sh "$HOME/UbuntuVMs/Ubuntu" --no-mac \
-  --feature battery=on --feature camera=on
+  --feature battery=on --feature camera=on --feature drag-drop=on
 ```
 
 Use `off` to remove either guest device and stop its host relay next start.
 For a running VM, `app/scripts/apply-vm.sh VM_DIR --no-mac --feature …` uses
 the same route. Both keep the host feature record and guest environment in
-sync; other Omarchy feature switches remain unavailable on Ubuntu.
+sync. The Ubuntu app also has Enable/Disable controls for Finder drops and
+gestures; other Omarchy feature switches remain unavailable on Ubuntu.
+
+**Trackpad gestures:** click **Install Helper and Enable…** under Input while
+the VM is shut down. This explicitly installs the packaged OmacVM Gestures
+Mac helper as a login item, provisions its authentication token safely as the
+guest user, and enables the guest's virtual trackpad. Grant Accessibility and
+Input Monitoring in macOS when prompted. The Bridge app and Omanotch are not
+needed. Full-screen three-finger swipes are handled by GNOME itself; the
+Hyprland workspace queries and swipe-out interception are disabled. The
+virtual touchpad's tap-to-click is off to avoid duplicate Mac clicks.
+
+For manual setup, run `app/scripts/install-ubuntu-gestures.sh`, then the
+update command above with `--feature gestures=on`. Turning gestures off does
+not uninstall the shared Mac helper or reset its permissions.
 
 Omanotch and Omarchy's shell/theme migration are omitted. Full screen uses
-the area below the notch. GNOME gesture forwarding, Touch ID, Mac IME,
-Finder drops, HDR and invisible-window DPMS still need separate ports and
-runtime validation; their Omarchy-specific switches are not offered in the
-Ubuntu app. Ordinary mouse input, scrolling and keyboard input remain on
-the existing QEMU path. No Bridge/Gestures helper or macOS permission was
-installed or granted by this port.
+the area below the notch. Touch ID, Mac IME and HDR are outside this port's
+scope. Invisible-window DPMS remains unavailable; ordinary mouse input,
+scrolling and keyboard input remain on the existing QEMU path. Only the
+person installs the Mac helper and grants its permissions.
 
 ## Validation on this port
 
@@ -181,3 +197,15 @@ Additional Ubuntu integration validation:
 
 The Ubuntu device off/on cycle was also verified against both the guest
 devices and the persisted host/guest feature settings.
+
+Finder/gesture validation used a hidden disposable Ubuntu VM:
+
+- QEMU's real drop handler, DropServer, read-only 9p share and guest agent
+  delivered text and binary files with spaces/symbols in their names; hashes
+  matched. A repeated drop preserved the original and created a numbered copy.
+- The gestures connection authenticated both peers using the existing HMAC
+  protocol. Replayed three-finger frames reached libinput as a swipe and
+  changed GNOME workspaces; a GTK window lost focus and regained it on the
+  return swipe. No Mac desktop input was injected.
+- The physical Mac trackpad and permission prompts still require the person;
+  the transport test used a stand-in Mac sender with a disposable token.

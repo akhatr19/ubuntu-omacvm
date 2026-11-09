@@ -14,7 +14,7 @@ apt-get install -y --no-install-recommends qemu-guest-agent openssh-server pytho
   build-essential libva-dev libegl-dev libglvnd-dev mesa-va-drivers mesa-vulkan-drivers \
   mesa-opencl-icd vulkan-tools clinfo vainfo mesa-utils mpv ffmpeg pulseaudio-utils systemd-zram-generator
 install -d /etc/omacvm
-FEATURES=${2:-gpu-compute=on battery=on camera=on}
+FEATURES=${2:-gpu-compute=on battery=on camera=on drag-drop=on}
 for f in $FEATURES; do [[ $f =~ ^[a-z0-9-]+=(on|off)$ ]] || { echo "invalid feature: $f" >&2; exit 2; }; done
 printf 'OMACVM_USER=%s\nOMACVM_VM_TYPE=app\nOMACVM_GUEST_OS=ubuntu\nOMACVM_GRAPHICS=vulkan\n' "$U" > /etc/omacvm/env
 printf 'OMACVM_HOST=10.0.2.2\nOMACVM_VM_NAME_B64=%s\nOMACVM_VERSION=%s\n' \

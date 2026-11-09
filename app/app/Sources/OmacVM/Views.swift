@@ -146,13 +146,13 @@ final class AppState: ObservableObject {
     /// Update VM (the header's button, the notice's, the question before a
     /// start): the VM started without a window, OmacVM and its Mac helpers
     /// brought up to this app's, shut down.
-    func updateVM(askMarker: Bool = true) {
+    func updateVM(askMarker: Bool = true, features: [String] = []) {
         // A test build never updates a VM of the installed app.
         if let why = Paths.startProblem(config.folder) { say(why); startAfterUpdate = false; return }
         // Not shut down cleanly, or copied while it ran: asked first.
         if askMarker, !RunMarker.confirmStart(config) { startAfterUpdate = false; return }
         message = nil
-        creator.update(config: config)
+        creator.update(config: config, features: features)
         screen = .building
     }
 
@@ -579,6 +579,7 @@ struct SetupView: View {
                 .replacingOccurrences(of: "gpu-compute=off", with: "gpu-compute=on")
                 .replacingOccurrences(of: "battery=off", with: "battery=on")
                 .replacingOccurrences(of: "camera=off", with: "camera=on")
+                .replacingOccurrences(of: "drag-drop=off", with: "drag-drop=on")
         }
         locationProblem = nil
         UserDefaults.standard.set(true, forKey: "offeredCLI")
