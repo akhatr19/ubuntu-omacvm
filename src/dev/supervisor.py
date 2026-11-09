@@ -115,7 +115,8 @@ def supervise(vm, desktop=False):
                 master = subprocess.Popen(master_args, stdin=subprocess.DEVNULL)
                 time.sleep(.5)
             command = ssh_args(vm, root=True)
-            command[-1:-1] = ['-S', control, '-o', 'ControlMaster=auto']
+            # Probes must not race the dedicated master to create its socket.
+            command[-1:-1] = ['-S', control, '-o', 'ControlMaster=no']
             try:
                 result = subprocess.run(command + ["ss -H -ltnp; printf '\\nUVM_DOCKER\\n'; docker ps --format '{{json .Ports}}' 2>/dev/null; printf '\\nUVM_SESSIONS\\n'; ps -eo args= | grep '^sshd'"],
                                         capture_output=True, text=True, timeout=15)
