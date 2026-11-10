@@ -19,6 +19,8 @@ struct ReadyView: View {
     @State private var sheet: ReadySheet?
     /// The VM to delete runs (or omacvm works on it): asked once, when the sheet opens.
     @State private var deleteBusy = false
+    @State private var managedRunning = true
+    @State private var gesturesPermissions = false
 
     enum ReadySheet: Identifiable {
         case delete(VMConfig), whatsNew
@@ -31,7 +33,7 @@ struct ReadyView: View {
     }
 
     private var managed: Bool { Product.isUbuntu && DeveloperActions.name(state.config) != nil }
-    private var running: Bool { preview?.running ?? (managed ? !Storage.busyFolders([state.config.folder]).isEmpty : state.vmRunning()) }
+    private var running: Bool { preview?.running ?? (managed ? managedRunning : state.vmRunning()) }
     /// A move to Omarchy 4.5 that is not over: Start and Update VM wait for Resume or Undo.
     private var moveOpen: Bool {
         if let m = preview?.move {
@@ -75,6 +77,7 @@ struct ReadyView: View {
                 WhatsNewSheet(updater: updater, running: running) { sheet = nil }
             }
         }
+        .sheet(isPresented: $gesturesPermissions) { UbuntuGesturesPermissions() }
         .onAppear { if let s = preview?.sheet { sheet = s } }
         // `omacvm`, the control centre or another window may have changed a
         // setting meanwhile: read them again (every row follows state.tick).
@@ -85,8 +88,14 @@ struct ReadyView: View {
         }
         .onAppear { if preview == nil { state.refreshMacSetup() } }
         .onChange(of: state.config.folder) { _, _ in if preview == nil { state.refreshMacSetup() } }
-        .task {
+        .task(id: state.config.folder) {
             while !Task.isCancelled && preview == nil {
+                if managed {
+                    let folder = state.config.folder
+                    let busy = await Task.detached { !Storage.busyFolders([folder]).isEmpty }.value
+                    if Task.isCancelled { return }
+                    managedRunning = busy
+                }
                 try? await Task.sleep(for: .seconds(3))
                 // Only while the window shows (not while a VM runs and it is put away).
                 if NSApp.windows.contains(where: { $0.isVisible && $0.contentViewController is NSHostingController<RootView> }) {
@@ -175,7 +184,9 @@ struct ReadyView: View {
         if let s = macSetup, s.needsAction, state.config.filesProblem == nil {
             NoticeStrip(text: MacSetup.displayName(s.notice(vm: state.config.name)), info: MacSetup.displayName(s.info(vm: state.config.name)), action: s.button,
                         disabled: s.fix == .updateVM && (running || state.storage.moving != nil)) {
-                state.fixMacSetup(s)
+                if Product.isUbuntu && s.fix == .settings && s.helpers.contains("OmacVM Gestures") {
+                    gesturesPermissions = true
+                } else { state.fixMacSetup(s) }
             }
         }
     }

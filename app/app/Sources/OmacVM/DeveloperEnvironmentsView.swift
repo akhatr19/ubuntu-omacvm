@@ -64,6 +64,7 @@ struct DeveloperEnvironmentsView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var job = DeveloperJob()
     @State private var vms: [VMConfig] = []
+    @State private var busyFolders: Set<URL> = []
     @State private var selected: VMConfig?
     @State private var network = false
     @State private var creating = false
@@ -89,7 +90,7 @@ struct DeveloperEnvironmentsView: View {
                                 HStack {
                                     Text(vm.name).font(.headline)
                                     Spacer()
-                                    Text(Storage.busyFolders([vm.folder]).isEmpty ? "Stopped" : "Running / busy").foregroundStyle(.secondary)
+                                    Text(busyFolders.contains(vm.folder) ? "Running / busy" : "Stopped").foregroundStyle(.secondary)
                                 }
                                 Text((managed ? "Developer VM" : "Desktop VM") + " · \(vm.cpus) CPUs · \(vm.memoryMB / 1024) GB RAM").font(.caption).foregroundStyle(.secondary)
                                 HStack {
@@ -118,6 +119,15 @@ struct DeveloperEnvironmentsView: View {
             }
         }.padding(22).frame(width: 800, height: 650)
         .onAppear(perform: refresh)
+        .task {
+            while !Task.isCancelled {
+                let folders = vms.map(\.folder)
+                let busy = await Task.detached { Storage.busyFolders(folders) }.value
+                if Task.isCancelled { return }
+                busyFolders = Set(busy)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .sheet(isPresented: $network) { if let selected { DeveloperSettingsView(state: state, config: selected) } }
         .sheet(isPresented: $creating, onDismiss: refresh) { NewDeveloperEnvironmentView(root: Paths.vmsRoot) }
         .interactiveDismissDisabled(job.busy)
