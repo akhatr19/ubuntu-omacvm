@@ -10,7 +10,7 @@ R=$(cd "$(dirname "$0")/../.." && pwd)
 A=$R/app/guest
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends qemu-guest-agent openssh-server python3 python3-gi dbus-daemon \
+apt-get install -y --no-install-recommends qemu-guest-agent openssh-server git python3 python3-gi dbus-daemon \
   build-essential libva-dev libegl-dev libglvnd-dev mesa-va-drivers mesa-vulkan-drivers \
   mesa-opencl-icd vulkan-tools clinfo vainfo mesa-utils mpv ffmpeg pulseaudio-utils systemd-zram-generator
 install -d /etc/omacvm

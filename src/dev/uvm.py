@@ -24,6 +24,12 @@ def parser():
     p.add_argument('-e', '--env', help='managed environment name')
     p.add_argument('-f', '--manifest', type=Path, help='project uvm.json (otherwise search parent folders)')
     sub = p.add_subparsers(dest='command')
+    workspace = sub.add_parser('workspace', help='open, clone, import or export a Linux project')
+    workspace.add_argument('--vm', type=Path, required=True)
+    workspace.add_argument('--qga')
+    workspace.add_argument('--project', required=True)
+    workspace.add_argument('action', choices=('info', 'init', 'clone', 'import', 'export', 'terminal', 'code', 'container', '_proxy'))
+    workspace.add_argument('source', nargs='?')
     init = sub.add_parser('init', help='write a versioned project manifest')
     init.add_argument('--base', required=True, type=Path)
     init.add_argument('--name', default='dev')
@@ -146,10 +152,10 @@ def execute(vm, argv, cwd=None, agent=False, root=False):
     project = f'/home/{metadata["user"]}/Projects/{metadata["manifest"]["name"]}'
     if cwd is None:
         cwd = project
-        root = metadata.get('project_root')
-        if root:
+        project_root = metadata.get('project_root')
+        if project_root:
             try:
-                relative = Path.cwd().relative_to(root)
+                relative = Path.cwd().relative_to(project_root)
                 cwd = str(Path(project) / relative)
             except ValueError:
                 pass
@@ -184,6 +190,13 @@ def main(argv=None):
         state = rt.ensure_up(vm)
         os.execv('/usr/bin/nc', ['nc', '127.0.0.1', str(state['ssh_port'])])
     args = parser().parse_args(argv)
+    if args.command == 'workspace':
+        import contextlib
+        import workspace
+        if args.action == '_proxy':
+            with contextlib.redirect_stdout(sys.stderr):
+                return workspace.main(args)
+        return workspace.main(args)
     if args.command == 'base':
         if args.base_action == 'build':
             bundles.build_base(args.iso.resolve(), args.output.resolve())

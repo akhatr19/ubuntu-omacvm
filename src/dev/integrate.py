@@ -18,14 +18,14 @@ def quote(value):
     return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"'
 
 
-def ssh_config(vm, install=False):
-    metadata = config(vm)
+def ssh_config(vm, install=False, metadata=None, proxy=None):
+    metadata = metadata or config(vm)
     name = metadata['name']
     alias = 'uvm-' + name
     folder = private_dir(HOME / 'ssh')
     file = folder / (name + '.conf')
     test = '1' if vm.name.startswith('OmacVM Test-Dev-') else '0'
-    proxy = shlex.join(['env', f'UVM_HOME={HOME}', f'UVM_VMS_ROOT={vm.parent}',
+    proxy = proxy or shlex.join(['env', f'UVM_HOME={HOME}', f'UVM_VMS_ROOT={vm.parent}',
                         f'UVM_APP={app_bundle()}', f'UVM_TEST_MODE={test}',
                         str(ROOT / 'uvm'), '--env', name, '_proxy'])
     file.write_text(f'''Host {alias}
@@ -65,6 +65,12 @@ def ssh_config(vm, install=False):
 def editor(vm):
     ensure_up(vm)
     alias, _ = ssh_config(vm, install=True)
+    metadata = config(vm)
+    path = f'/home/{metadata["user"]}/Projects/{metadata["manifest"]["name"]}'
+    open_editor(alias, path)
+
+
+def open_editor(alias, path):
     executable = shutil.which('code')
     if not executable:
         candidates = [Path('/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code'),
@@ -72,8 +78,6 @@ def editor(vm):
         executable = next((str(p) for p in candidates if p.exists()), None)
     if not executable:
         raise ValueError('install VS Code and its Remote - SSH extension first')
-    metadata = config(vm)
-    path = f'/home/{metadata["user"]}/Projects/{metadata["manifest"]["name"]}'
     uri = 'vscode-remote://ssh-remote+' + alias + urllib.parse.quote(path)
     run([executable, '--folder-uri', uri])
 

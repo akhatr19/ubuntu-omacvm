@@ -10,6 +10,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import runtime
 import supervisor
+import uvm
 
 
 class LifecycleTests(unittest.TestCase):
@@ -32,6 +33,18 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(runtime.ensure_up(Path('/unused')), ready)
             spawn.assert_not_called()
             busy.assert_not_called()
+
+    def test_project_root_does_not_turn_user_commands_into_root_commands(self):
+        with tempfile.TemporaryDirectory() as folder:
+            metadata = {'user': 'ubuntu', 'project_root': '/Mac/project', 'manifest': {'name': 'project', 'ssh_agent': False}}
+            with mock.patch('uvm.rt.ensure_up'), mock.patch('uvm.rt.config', return_value=metadata), \
+                 mock.patch('uvm.Path.cwd', return_value=Path('/Mac/project/src')), \
+                 mock.patch('uvm.rt.sockets', return_value=Path(folder)), \
+                 mock.patch('uvm.rt.ssh_args', return_value=['ssh', 'test']) as ssh, \
+                 mock.patch('uvm.subprocess.Popen') as process:
+                process.return_value.wait.return_value = 0
+                self.assertEqual(uvm.execute(Path('/test'), ['true']), 0)
+                self.assertIs(ssh.call_args.kwargs['root'], False)
 
     def test_stop_waits_for_supervisor_before_desktop_restart(self):
         with tempfile.TemporaryDirectory() as folder:
