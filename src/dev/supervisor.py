@@ -31,7 +31,7 @@ def listening_ports(output):
                 port = int(fields[3].rsplit(':', 1)[1])
             except (ValueError, IndexError):
                 continue
-            if 1024 <= port <= 65535:
+            if 1024 <= port <= 65535 and port != 1445:  # private Finder SMB service has its own authenticated tunnel
                 address = fields[3].rsplit(':', 1)[0].strip('[]')
                 target = '[::1]' if address in ('::1', '::') else '127.0.0.1'
                 if port not in ports or target == '127.0.0.1':

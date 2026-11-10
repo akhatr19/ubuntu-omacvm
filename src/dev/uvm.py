@@ -24,6 +24,20 @@ def parser():
     p.add_argument('-e', '--env', help='managed environment name')
     p.add_argument('-f', '--manifest', type=Path, help='project uvm.json (otherwise search parent folders)')
     sub = p.add_subparsers(dest='command')
+    drive = sub.add_parser('drive', help='Finder file service and previewable directional sync')
+    drive.add_argument('--vm', type=Path, required=True)
+    drive.add_argument('--qga')
+    drive.add_argument('--project', required=True)
+    drive.add_argument('action', choices=('enable', 'connect', 'disconnect', 'sync'))
+    drive.add_argument('--local', type=Path)
+    drive.add_argument('--direction', choices=('to-linux', 'to-mac'), default='to-linux')
+    drive.add_argument('--preview', action='store_true')
+    snapshots = sub.add_parser('snapshot', help='stopped-disk checkpoints, restore and fork')
+    snapshots.add_argument('--vm', type=Path, required=True)
+    snapshots.add_argument('action', choices=('list', 'create', 'restore', 'fork'))
+    snapshots.add_argument('--name')
+    snapshots.add_argument('--id')
+    snapshots.add_argument('--output', type=Path)
     workspace = sub.add_parser('workspace', help='open, clone, import or export a Linux project')
     workspace.add_argument('--vm', type=Path, required=True)
     workspace.add_argument('--qga')
@@ -190,6 +204,21 @@ def main(argv=None):
         state = rt.ensure_up(vm)
         os.execv('/usr/bin/nc', ['nc', '127.0.0.1', str(state['ssh_port'])])
     args = parser().parse_args(argv)
+    if args.command == 'drive':
+        import files
+        return files.main(args)
+    if args.command == 'snapshot':
+        import checkpoints
+        if args.action == 'list': result = checkpoints.listing(args.vm)
+        elif args.action == 'create': result = checkpoints.create(args.vm, args.name or '')
+        elif args.action == 'restore': result = checkpoints.restore(args.vm, args.id or '')
+        else: result = checkpoints.fork(args.vm, args.id or '', args.name or '')
+        if args.output:
+            descriptor = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, 'w') as stream: json.dump(result, stream)
+            print('Snapshot history ready.')
+        else: print(json.dumps(result))
+        return 0
     if args.command == 'workspace':
         import contextlib
         import workspace

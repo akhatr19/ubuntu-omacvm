@@ -7,6 +7,7 @@ from pathlib import Path
 
 SCHEMA = 1
 PROFILES = {
+    'files': ['samba', 'samba-vfs-modules', 'rsync'],
     'base': ['build-essential', 'git', 'curl', 'ca-certificates', 'pkg-config'],
     'python': ['python3', 'python3-venv', 'python3-pip'],
     'node': ['nodejs', 'npm'],

@@ -322,6 +322,21 @@ def qemu_plan(vm, port, desktop=False):
             '-device', 'virtserialport,bus=vser0.0,nr=2,chardev=host,name=org.ubuntu.vm.host',
             '-qmp', f'unix:{q(run_dir / "qmp")},server=on,wait=off',
             '-serial', f'file:{q(vm / "logs/developer-console.log")}', '-monitor', 'none']
+    share = vm / 'mac-folder'
+    if share.exists():
+        text = share.read_text().strip()
+        folder = Path(text).resolve()
+        home = Path.home().resolve()
+        if not text.startswith('/') or '\n' in text or '\r' in text or folder == home or folder in home.parents:
+            raise ValueError('Mac sharing needs a data folder, not the entire home or a parent')
+        try:
+            with os.scandir(folder):
+                pass  # macOS authorizes access; an unavailable optional share must not prevent boot.
+        except OSError:
+            print('Mac folder unavailable; starting without it.', file=sys.stderr)
+        else:
+            args += ['-fsdev', f'local,id=macfs,path={q(folder)},security_model=none,multidevs=remap,guest_owner_uid=1000,guest_owner_gid=1000',
+                     '-device', 'virtio-9p-pci,fsdev=macfs,mount_tag=omacvm-mac']
     for value in ('omacvm.vkwindows=1', 'omacvm.vaexport=1', 'omacvm.vadecasync=1', 'omacvm.valogical=1'):
         args.extend(['-smbios', 'type=11,value=' + value])
     env = os.environ.copy()

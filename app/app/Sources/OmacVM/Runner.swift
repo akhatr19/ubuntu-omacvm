@@ -812,6 +812,10 @@ final class Runner {
         let agentDeadline = Date().addingTimeInterval(600)
         Thread.detachNewThread { [weak self] in
             GuestAgent.hold(socketPath: agentPath)
+            if Product.isUbuntu, let error = UbuntuForkIdentity.prepare(c, agent: agentPath, pid: pid) {
+                Task { @MainActor in self?.appendLog("UbuntuVM: " + error) }
+                return
+            }
             let r = VMKey.ensure(folder: folder, agentPath: agentPath, pingWait: agentDeadline.timeIntervalSinceNow,
                                  running: { kill(pid, 0) == 0 })
             if let line = SSHRepair.logLine(r, stillRunning: kill(pid, 0) == 0) {

@@ -11,6 +11,8 @@ struct UbuntuHomeView: View {
     @State private var stopping: Set<URL> = []
     @State private var starting: Set<URL> = []
     @State private var network: VMConfig?
+    @State private var snapshot: VMConfig?
+    @State private var dataVM: VMConfig?
     @State private var adding = false
     @State private var creating = false
     @State private var problem: String?
@@ -76,6 +78,8 @@ struct UbuntuHomeView: View {
             }
         }
         .sheet(item: $network) { vm in UbuntuPortsView(state: state, config: vm) }
+        .sheet(item: $snapshot, onDismiss: refresh) { vm in UbuntuSnapshotsView(config: vm) }
+        .sheet(item: $dataVM) { vm in UbuntuDataView(config: vm) }
         .sheet(isPresented: $adding) { AddUbuntuProjectView(vms: vms) { project in projects.remember(project); tab = 1; open(project, action: project.editor) } }
         .sheet(isPresented: $creating, onDismiss: refresh) {
             NewDeveloperEnvironmentView(root: Paths.vmsRoot) { vm in
@@ -99,6 +103,8 @@ struct UbuntuHomeView: View {
                     Button("Open Desktop") { desktop(vm) }
                     Button("VS Code") { run(vm, path: "/home/\(vm.user)", action: "code") }
                     Menu("More") {
+                        Button("Snapshots & Forks…") { snapshot = vm }
+                        Button("Files, Finder & Sync…") { dataVM = vm }
                         Button("Ports & SSH…") { network = vm }
                         Button("VM Settings…") {
                             if state.vmRunning() && state.config.folder != vm.folder { problem = "Stop the current desktop before selecting another VM." }
@@ -124,6 +130,8 @@ struct UbuntuHomeView: View {
                         Button("Dev Container…") { open(project, action: "container") }
                     }
                     Menu("Files & Environment") {
+                        Button("VM Snapshots & Forks…") { snapshot = vms.first { $0.folder.path == project.vmFolder } }
+                        Button("Files, Finder & Sync…") { dataVM = vms.first { $0.folder.path == project.vmFolder } }
                         Button("Check Project / Dev Container") { open(project, action: "info") }
                         Button("Open Dev Container…") { open(project, action: "container") }
                         Button("Import Mac Folder…") { importFolder(project) }
@@ -188,7 +196,18 @@ struct UbuntuHomeView: View {
         }
     }
     private func stop(_ vm: VMConfig) {
-        if let why = Paths.startProblem(vm.folder) { problem = why; return }
+        stopping.insert(vm.folder)
+        Task {
+            if let port = UbuntuDataView.savedPort(vm), let error = await UbuntuDriveMount.eject(port: port) {
+                problem = "Eject Linux drives before stopping: " + error
+                stopping.remove(vm.folder)
+                return
+            }
+            stopAfterEject(vm)
+        }
+    }
+    private func stopAfterEject(_ vm: VMConfig) {
+        if let why = Paths.startProblem(vm.folder) { problem = why; stopping.remove(vm.folder); return }
         if let name = DeveloperActions.name(vm) {
             stopping.insert(vm.folder)
             job.run([["--env", name, "stop"]], root: vm.folder.deletingLastPathComponent(), test: vm.name.hasPrefix("OmacVM Test-")) {

@@ -257,3 +257,5 @@ The two grants are shown separately from the running helper's own log, with its
 process identity checked; an old report or the launcher's privacy identity cannot
 stand in for the current helper. **Repair Helper** reinstalls the packaged helper
 if it is missing. Your VM disk and settings are preserved.
+
+See [Snapshots, forks and files](snapshots-and-files.md) for disk restore, branches, Finder access and directional sync.

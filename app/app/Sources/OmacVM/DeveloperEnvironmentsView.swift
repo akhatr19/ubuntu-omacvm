@@ -6,7 +6,7 @@ final class DeveloperJob: ObservableObject {
     @Published var busy = false
     @Published var output = ""
 
-    func run(_ commands: [[String]], root: URL, test: Bool? = nil, finished: (() -> Void)? = nil) {
+    func run(_ commands: [[String]], root: URL, test: Bool? = nil, input: Data? = nil, finished: (() -> Void)? = nil) {
         guard !busy else { return }
         busy = true; output = "Working…"
         let cli = DeveloperActions.cli.path
@@ -29,9 +29,15 @@ final class DeveloperJob: ObservableObject {
                         env["UVM_APP"] = app; env["UVM_VMS_ROOT"] = root.path
                         env["UVM_TEST_MODE"] = testMode ? "1" : "0"
                         process.environment = env
-                        process.standardInput = FileHandle.nullDevice
+                        let incoming = input.map { _ in Pipe() }
+                        process.standardInput = incoming ?? FileHandle.nullDevice as Any
                         process.standardOutput = handle; process.standardError = handle
                         try process.run()
+                        if let input, let incoming {
+                            _ = fcntl(incoming.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+                            defer { try? incoming.fileHandleForWriting.close() }
+                            try incoming.fileHandleForWriting.write(contentsOf: input)
+                        }
                         while process.isRunning {
                             if let reader = try? FileHandle(forReadingFrom: file) {
                                 let size = (try? reader.seekToEnd()) ?? 0
@@ -82,7 +88,7 @@ struct NewDeveloperEnvironmentView: View {
             directory("Base bundle", value: base) { base = choose() }
             Button("Build Base from Ubuntu ISO…") { buildBase() }.disabled(job.busy)
             HStack {
-                ForEach(["python", "node", "rust", "docker"], id: \.self) { profile in
+                ForEach(["python", "node", "rust", "docker", "files"], id: \.self) { profile in
                     Toggle(profile.capitalized, isOn: Binding(get: { profiles.contains(profile) }, set: { if $0 { profiles.insert(profile) } else { profiles.remove(profile) } }))
                 }
             }.disabled(job.busy)

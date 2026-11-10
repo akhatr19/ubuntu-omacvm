@@ -75,6 +75,10 @@ class Session:
             deadline = time.monotonic() + 240
             last = ''
             while time.monotonic() < deadline:
+                if (self.vm / 'fork-identity').exists():
+                    last = 'waiting for the fork to establish its independent identity'
+                    time.sleep(1)
+                    continue
                 try:
                     result = rt.socket_request(self.qga, 'guest-exec', {'path': '/bin/cat',
                         'arg': ['/etc/ssh/ssh_host_ed25519_key.pub'], 'capture-output': True}, qga=True)

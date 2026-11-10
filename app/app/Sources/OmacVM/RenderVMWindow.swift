@@ -310,6 +310,13 @@ enum RenderVMWindow {
             sheet("sheet-ubuntu-gesture-permissions") { UbuntuGesturesPermissions() }
             sheet("sheet-ubuntu-project") { AddUbuntuProjectView(vms: [config]) { _ in } }
             sheet("sheet-ubuntu-ports") { UbuntuPortsView(state: state, config: config) }
+            sheet("sheet-ubuntu-data") { UbuntuDataView(config: config) }
+            sheet("sheet-ubuntu-snapshots") {
+                UbuntuSnapshotsView(config: config, previewRows: [
+                    UbuntuCheckpoint(id: "experiment123", parent: "base456", label: "Working experiment", vmName: "Ubuntu-branch", createdAt: "2026-11-10 12:00 UTC"),
+                    UbuntuCheckpoint(id: "base456", parent: nil, label: "Clean development setup", vmName: "Ubuntu", createdAt: "2026-11-09 12:00 UTC")
+                ])
+            }
             picture("screen-ubuntu-home", into: dirURL, each: { _ in
                 if LayoutProbe.frames["home-vm-\(config.id)"] == nil { note("Ubuntu home is missing its VM card", fail: true) }
             }) { UbuntuHomeView(state: state, fixtures: [config]) }
