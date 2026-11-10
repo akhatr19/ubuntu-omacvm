@@ -62,6 +62,12 @@ struct DeveloperSettingsView: View {
                                     Image(systemName: "arrow.right")
                                     Text("Ubuntu"); TextField("Guest", value: $settings.ports[index].guest, format: .number.grouping(.never)).frame(width: 85)
                                     Toggle("LAN", isOn: $settings.ports[index].lan)
+                                    Button("Find Free Port") {
+                                        var excluded = Set(settings.ports.enumerated().filter { $0.offset != index }.map { $0.element.host })
+                                        excluded.insert(config.sshPort)
+                                        if settings.sshLAN { excluded.insert(settings.sshPort) }
+                                        if let free = UbuntuNetworking.availablePort(start: settings.ports[index].host, excluding: excluded) { settings.ports[index].host = free }
+                                    }
                                     Button("Remove") { settings.ports.remove(at: index) }
                                 }
                             }

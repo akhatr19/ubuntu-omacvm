@@ -39,6 +39,7 @@ enum Screen: Equatable {
 @MainActor
 final class AppState: ObservableObject {
     @Published var screen: Screen = .setup
+    @Published var showHome = true
     @Published var config: VMConfig
     /// A line under the header: red unless messageIsInfo.
     @Published var message: String? { didSet { if message == nil { messageIsInfo = false } } }
@@ -343,6 +344,9 @@ struct RootView: View {
     var preview: RenderVMWindow.Preview? = nil
 
     var body: some View {
+        if Product.isUbuntu && state.showHome && preview == nil && (state.screen == .ready || state.screen == .setup) {
+            UbuntuHomeView(state: state)
+        } else {
         switch state.screen {
         case .install: InstallView(onDone: { state.installDone() })
         case .setup: SetupView(state: state)
@@ -350,6 +354,7 @@ struct RootView: View {
         case .ready: ReadyView(state: state, preview: preview)
         case .driveMissing: DriveMissingView(state: state)
         case .unavailable: UnavailableView(state: state)
+        }
         }
     }
 }
@@ -407,6 +412,7 @@ struct SetupView: View {
             WindowHeader(title: "New \(Product.guestName) VM", facts: Product.isUbuntu ? "Ubuntu Desktop 26.10 ARM64 with GNOME and accelerated graphics." : "Arch Linux ARM with Omarchy, made into a VM on this Mac.") {
                 AppIconButton()
             } trailing: {
+            if Product.isUbuntu { Button("VMs & Projects") { state.showHome = true } }
                 // A VM copied here or on another drive: show it instead.
                 Button("Open Existing VM…") { state.openExisting() }
                     .disabled(state.storage.moving != nil)

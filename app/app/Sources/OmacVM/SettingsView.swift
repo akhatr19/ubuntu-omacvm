@@ -115,6 +115,7 @@ struct ReadyView: View {
                      factsInfo: factsInfo) {
             AppIconButton()
         } trailing: {
+            if Product.isUbuntu { Button("Home") { state.showHome = true } }
             let app = preview?.appVersion ?? OmacVMVersion.app
             let behind = app.map { OmacVMVersion.vmIsBehind(state.config.guestVersion, app: $0) } ?? false
             // Also when this Mac's helpers are not set up for the VM (a VM

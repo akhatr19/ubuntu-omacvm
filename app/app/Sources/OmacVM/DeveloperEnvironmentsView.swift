@@ -59,94 +59,9 @@ final class DeveloperJob: ObservableObject {
     }
 }
 
-struct DeveloperEnvironmentsView: View {
-    @ObservedObject var state: AppState
-    @Environment(\.dismiss) private var dismiss
-    @StateObject private var job = DeveloperJob()
-    @State private var vms: [VMConfig] = []
-    @State private var busyFolders: Set<URL> = []
-    @State private var selected: VMConfig?
-    @State private var network = false
-    @State private var creating = false
-    @State private var problem: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Ubuntu environments").font(.title2.bold())
-                Spacer()
-                Button("New Environment…") { creating = true }.disabled(job.busy)
-                Button("Refresh") { refresh() }
-                Button("Close") { dismiss() }.disabled(job.busy)
-            }
-            Text("Each VM has its own Linux system, disk and SSH identity. Multiple headless environments can run concurrently; the launcher controls one desktop at a time.").foregroundStyle(.secondary)
-            if let problem { Text(problem).foregroundStyle(.red) }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(vms, id: \.folder) { vm in
-                        GroupBox {
-                            VStack(alignment: .leading, spacing: 8) {
-                                let managed = DeveloperActions.name(vm) != nil
-                                HStack {
-                                    Text(vm.name).font(.headline)
-                                    Spacer()
-                                    Text(busyFolders.contains(vm.folder) ? "Running / busy" : "Stopped").foregroundStyle(.secondary)
-                                }
-                                Text((managed ? "Developer VM" : "Desktop VM") + " · \(vm.cpus) CPUs · \(vm.memoryMB / 1024) GB RAM").font(.caption).foregroundStyle(.secondary)
-                                HStack {
-                                    Button("SSH & Network…") { selected = vm; network = true }
-                                    if managed {
-                                        Button("Start Headless") { action(vm, "up") }
-                                        Button("Stop") { action(vm, "stop") }
-                                        Button("Terminal") { open(vm, "shell") }
-                                        Button("VS Code") { open(vm, "code") }
-                                        Button("Verify") { action(vm, "verify") }
-                                    }
-                                    Button("Select") {
-                                        if state.vmRunning() { problem = "Stop the current desktop VM before selecting another. Headless controls above remain independent." }
-                                        else { state.showOther(vm); dismiss() }
-                                    }
-                                }.disabled(job.busy)
-                            }.padding(5)
-                        }
-                    }
-                    if vms.isEmpty { Text("No Ubuntu VMs yet. Create an environment or install Ubuntu from the main setup screen.") }
-                }
-            }
-            if job.busy { ProgressView("Running developer command…") }
-            if !job.output.isEmpty {
-                ScrollView { Text(job.output).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 130)
-            }
-        }.padding(22).frame(width: 800, height: 650)
-        .onAppear(perform: refresh)
-        .task {
-            while !Task.isCancelled {
-                let folders = vms.map(\.folder)
-                let busy = await Task.detached { Storage.busyFolders(folders) }.value
-                if Task.isCancelled { return }
-                busyFolders = Set(busy)
-                try? await Task.sleep(for: .seconds(2))
-            }
-        }
-        .sheet(isPresented: $network) { if let selected { DeveloperSettingsView(state: state, config: selected) } }
-        .sheet(isPresented: $creating, onDismiss: refresh) { NewDeveloperEnvironmentView(root: Paths.vmsRoot) }
-        .interactiveDismissDisabled(job.busy)
-    }
-    private func refresh() {
-        vms = VMConfig.all().filter { (try? String(contentsOf: $0.folder.appendingPathComponent("guest-os"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == "ubuntu" }
-    }
-    private func action(_ vm: VMConfig, _ command: String) {
-        if let why = Paths.startProblem(vm.folder) { problem = why; return }
-        guard let name = DeveloperActions.name(vm) else { return }
-        job.run([["--env", name, command]], root: vm.folder.deletingLastPathComponent(), test: vm.name.hasPrefix("OmacVM Test-Dev-"), finished: refresh)
-    }
-    private func open(_ vm: VMConfig, _ command: String) {
-        do { try DeveloperActions.open(vm, command) } catch { problem = error.localizedDescription }
-    }
-}
-
 struct NewDeveloperEnvironmentView: View {
     let root: URL
+    var onCreated: ((VMConfig) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var job = DeveloperJob()
     @State private var name = "dev"
@@ -173,7 +88,7 @@ struct NewDeveloperEnvironmentView: View {
             }.disabled(job.busy)
             Text("Base build tools are always included.").font(.caption).foregroundStyle(.secondary)
             Text("VMs are created in \(root.path). CPU/memory can be changed in the app; project provisioning and package pins are recorded in the manifest and lock.").font(.caption).foregroundStyle(.secondary)
-            Button("Create Environment") { create() }
+            Button(onCreated == nil ? "Create Environment" : "Create & Open Project") { create() }
                 .buttonStyle(.borderedProminent)
                 .disabled(job.busy || project == nil || name.range(of: "^[a-z][a-z0-9-]{0,39}$", options: .regularExpression) == nil)
             if job.busy { ProgressView("Installing packages and configuring Ubuntu…") }
@@ -212,6 +127,14 @@ struct NewDeveloperEnvironmentView: View {
         var create = ["--manifest", manifest.path, "create", "--name", name]
         if FileManager.default.fileExists(atPath: project.appendingPathComponent("uvm.lock.json").path) { create.append("--locked") }
         commands.append(create)
-        job.run(commands, root: root)
+        job.run(commands, root: root) {
+            guard job.output.hasPrefix("Completed."), let onCreated else { return }
+            let folder = root.appendingPathComponent((TestIdentity.isOn ? "OmacVM Test-Dev-" : "Dev-") + name)
+            guard let vm = VMConfig.load(from: folder) else { job.output = "Environment created, but its VM settings could not be loaded."; return }
+            let imported = DeveloperActions.workspace(vm, path: DeveloperActions.projectPath(vm), action: "import", source: project.path)
+            job.run([imported], root: root) {
+                if job.output.hasPrefix("Completed.") { onCreated(vm); dismiss() }
+            }
+        }
     }
 }

@@ -51,6 +51,43 @@ enum UbuntuNetworking {
         } catch { return "UbuntuVM: network setup: \(error.localizedDescription)" }
     }
 
+    nonisolated static func availablePort(start: Int, excluding: Set<Int>) -> Int? {
+        for port in min(65535, max(1024, start))...65535 where !excluding.contains(port) {
+            let fd = socket(AF_INET, SOCK_STREAM, 0)
+            guard fd >= 0 else { return nil }
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET); address.sin_port = in_port_t(port).bigEndian
+            let result = withUnsafePointer(to: &address) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+            }
+            close(fd)
+            if result == 0 { return port }
+        }
+        return nil
+    }
+
+    nonisolated static func portReachable(_ port: Int) -> Bool {
+        guard (1024...65535).contains(port) else { return false }
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        _ = fcntl(fd, F_SETFL, O_NONBLOCK)
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET); address.sin_port = in_port_t(port).bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        if connected == 0 { return true }
+        guard errno == EINPROGRESS else { return false }
+        var event = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+        guard poll(&event, 1, 700) > 0 else { return false }
+        var error: Int32 = 0, size = socklen_t(MemoryLayout<Int32>.size)
+        return getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &size) == 0 && error == 0
+    }
+
     static var lanAddresses: [String] {
         var pointer: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&pointer) == 0, let first = pointer else { return [] }

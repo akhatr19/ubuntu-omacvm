@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import IOKit
 import Foundation
 import OmacVMUpdate
@@ -235,16 +236,7 @@ struct VMConfig: Equatable {
 
     /// Same id as scripts/vm-common.sh: the first 8 hex digits of SHA-1 of the folder path.
     var id: String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
-        let input = Pipe(), output = Pipe()
-        p.standardInput = input; p.standardOutput = output
-        try? p.run()
-        input.fileHandleForWriting.write(folder.path.data(using: .utf8)!)
-        try? input.fileHandleForWriting.close()
-        p.waitUntilExit()
-        let s = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "00000000"
-        return String(s.prefix(8))
+        String(Insecure.SHA1.hash(data: Data(folder.path.utf8)).map { String(format: "%02x", $0) }.joined().prefix(8))
     }
     var qmpSocket: URL { Paths.runDir.appendingPathComponent("\(id).qmp") }
     var agentSocket: URL { Paths.runDir.appendingPathComponent("\(id).qga") }

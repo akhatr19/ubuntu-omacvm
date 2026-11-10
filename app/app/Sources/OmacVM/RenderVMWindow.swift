@@ -306,9 +306,17 @@ enum RenderVMWindow {
             sheet("sheet-developer-network") { DeveloperSettingsView(state: state, config: config) }
             try? FileManager.default.removeItem(at: networkFile)
             if let savedFast { try? savedFast.write(to: config.folder.appendingPathComponent("fast-network")) }
-            sheet("sheet-developer-environments") { DeveloperEnvironmentsView(state: state) }
             sheet("sheet-developer-create") { NewDeveloperEnvironmentView(root: tmp) }
             sheet("sheet-ubuntu-gesture-permissions") { UbuntuGesturesPermissions() }
+            sheet("sheet-ubuntu-project") { AddUbuntuProjectView(vms: [config]) { _ in } }
+            sheet("sheet-ubuntu-ports") { UbuntuPortsView(state: state, config: config) }
+            picture("screen-ubuntu-home", into: dirURL, each: { _ in
+                if LayoutProbe.frames["home-vm-\(config.id)"] == nil { note("Ubuntu home is missing its VM card", fail: true) }
+            }) { UbuntuHomeView(state: state, fixtures: [config]) }
+            sides("screen-ubuntu-home", height: smallHeight)
+            let project = UbuntuProject(name: "Example project", vmFolder: config.folder.path, linuxPath: "/home/ubuntu/Projects/example", lastOpened: Date())
+            picture("screen-ubuntu-projects", into: dirURL) { UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project]) }
+            sides("screen-ubuntu-projects", height: smallHeight)
         }
         usbPictures(folder: folder, into: dir)
         sheet("sheet-8-icon-looks") { AppIconPicker(selected: IconTheme.all[0]) { _ in } }
