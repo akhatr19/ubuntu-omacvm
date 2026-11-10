@@ -17,7 +17,27 @@ export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer
 swift build --package-path "$R/app/app" --disable-sandbox --product OmacVM
 BIN=$(swift build --package-path "$R/app/app" --show-bin-path)
 T=$(mktemp -d)
-trap 'rm -rf "$T"' EXIT
+# Serialize allocation: successful and failed packages never reuse a build number.
+LOCK=$R/app/.build/ubuntu-build-number.lock
+mkdir "$LOCK" || { echo 'Another Ubuntu package build is allocating a number' >&2; exit 1; }
+trap 'rm -rf "$T"; rmdir "$LOCK"' EXIT
+BUILD=$(python3 - "$R/app/.build/ubuntu-build-number" <<'PYBUILD'
+import pathlib, plistlib, sys
+counter = pathlib.Path(sys.argv[1])
+numbers = [int(counter.read_text())] if counter.exists() else [0]
+for folder in (pathlib.Path('/Applications'), pathlib.Path.home() / 'Applications'):
+    for app in folder.glob('*.app'):
+        try:
+            info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+            if info.get('CFBundleIdentifier') == 'org.omacvm.ubuntu' and info.get('UbuntuVMDevBuild'):
+                numbers.append(int(info['CFBundleVersion']))
+        except (OSError, ValueError, KeyError, plistlib.InvalidFileException):
+            pass
+number = max(numbers) + 1
+counter.write_text(str(number) + '\n')
+print(number)
+PYBUILD
+)
 APP=$T/UbuntuVM.app
 C=$APP/Contents
 ditto "$BASE" "$APP"
@@ -29,6 +49,9 @@ COMMIT=$(git -C "$R" rev-parse HEAD)
 printf '%s\n' "$COMMIT" > "$C/Resources/omacvm/COMMIT"
 ID=${OMACVM_UBUNTU_BUNDLE_ID:-org.omacvm.ubuntu}
 [[ $ID == org.omacvm.ubuntu || $ID == org.omacvm.ubuntu.* ]] || exit 2
+/usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.1' "$C/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$C/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :UbuntuVMDevBuild bool true' "$C/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $ID" "$C/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleName UbuntuVM' "$C/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName UbuntuVM' "$C/Info.plist"
@@ -50,4 +73,4 @@ cp "$C/Resources/OmacVM.icns" "$HELPER/Contents/Resources/OmacVM.icns"
 "$R/app/scripts/sign-app.sh" "$APP" "$ID"
 mkdir -p "$(dirname "$OUT")"
 mv "$APP" "$OUT"
-echo "Built $OUT"
+echo "Built UbuntuVM 0.1 Dev Build #$BUILD at $OUT"

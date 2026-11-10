@@ -20,7 +20,23 @@ The output path must be new. The script checks that the runtime's source
 commit matches and that this fork has not changed its runtime patches,
 compiles the launcher, packages the Ubuntu sources and orange terminal icon,
 and ad-hoc signs the result. Xcode is required. Its bundle ID is
-`org.omacvm.ubuntu`; its default VM folder is `~/UbuntuVMs`. The first launch offers **Install and Open** to copy the app into Applications;
+`org.omacvm.ubuntu`; its default VM folder is `~/UbuntuVMs`. Builds are labeled **0.1 Dev Build #N** in the installer and app window.
+Packaging automatically increments `N`, recording it in `CFBundleVersion` and
+`app/.build/ubuntu-build-number`; it also checks installed build numbers so an
+existing newer installation is never assigned an older number. Keep that counter
+when cleaning build artifacts. The upstream integration version in `src/VERSION`
+is separate from the Ubuntu app version.
+
+Open `app/dist/UbuntuVM.app` to install or update. A build/download copy only
+shows the installer; it cannot start VMs or hand off silently to an older app.
+The installer searches `/Applications`, `~/Applications`, and the last chosen
+installation path (including renamed copies), preselects the newest installed
+build, shows both versions, and offers **Update and Open** when appropriate.
+An equal or older build offers **Open Installed App** and cannot downgrade it.
+Quit the installed app and its VMs before updating. The replacement is staged
+before the existing app is moved, with rollback if the final move fails.
+
+The first launch offers **Install and Open** to copy the app into Applications;
 there is no try/skip-install path. The installer shows the full destination:
 `/Applications` for all users or `~/Applications` for only your account. Existing
 installations retain their location unless you choose another. When moving an

@@ -160,6 +160,7 @@ enum Paths {
 /// The app's display name: what the user called the app (OmacVM, Omarchy, ...).
 enum Product {
     static var isUbuntu: Bool { Bundle.main.bundleIdentifier?.hasPrefix("org.omacvm.ubuntu") == true }
+    static var buildLabel: String { InstallMemory.displayVersion(of: Bundle.main.bundleURL) }
     static var guestName: String { isUbuntu ? "Ubuntu" : "Omarchy" }
     static var name: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "OmacVM"

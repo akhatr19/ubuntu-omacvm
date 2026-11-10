@@ -262,6 +262,23 @@ enum RenderVMWindow {
         window("screen-2-unavailable", state, usual)
         state.screen = .install
         window("screen-3-install", state, usual)
+        if Product.isUbuntu {
+            // An installed legacy copy: exercise Update and Open without
+            // reading the person's installed app or changing their defaults.
+            let apps = tmp.appendingPathComponent("Applications")
+            let app = apps.appendingPathComponent("UbuntuVM.app/Contents")
+            try? FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+            let info: [String: String] = ["CFBundleIdentifier": Bundle.main.bundleIdentifier ?? "",
+                                         "CFBundleShortVersionString": "3.4.1"]
+            try? PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+                .write(to: app.appendingPathComponent("Info.plist"))
+            let suite = tmp.appendingPathComponent("install-defaults").path
+            let defaults = UserDefaults(suiteName: suite)!
+            let memory = InstallMemory(defaults: defaults, bundleID: Bundle.main.bundleIdentifier ?? "", appFolders: [apps])
+            picture("screen-4-update", into: dirURL) { InstallView(memory: memory) {} }
+            sides("screen-4-update", height: smallHeight)
+            defaults.removePersistentDomain(forName: suite)
+        }
         state.screen = .ready
 
         // The sheets: Delete (typed, and while the VM runs), All VMs, USB

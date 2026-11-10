@@ -24,6 +24,16 @@ struct WindowShell<Header: View, Notices: View, Content: View>: View {
         VStack(spacing: 0) {
             header.zIndex(2)
             notices.zIndex(1)
+            if Product.isUbuntu {
+                HStack {
+                    Text("\(Product.name) · \(Product.buildLabel)")
+                    Spacer()
+                    Text(Installer.isInstalled ? "Installed app" : "Installer")
+                }
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .padding(.horizontal, CGFloat(WindowLayout.contentInset)).padding(.vertical, 5)
+                .help(Bundle.main.bundlePath)
+            }
             if nav.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) { content }

@@ -128,6 +128,32 @@ expect("self-update of a copy run without installing: not asked",
 expect("omacvm update (into ~/Applications): not asked", memory.isInstalled(makeApp(userApps, "OmacVM", version: "3.0.0")))
 expect("omacvm update (into /Applications): not asked", memory.isInstalled(makeApp(sysApps, "OmacVM", version: "3.0.0")))
 
+// Dev installers compare build numbers numerically and find the newest copy
+// even when defaults remember an older installation in the other folder.
+reset()
+func devApp(_ folder: URL, _ name: String, build: Int) -> URL {
+    let app = makeApp(folder, name, id: "org.omacvm.ubuntu", version: "0.1")
+    let info: [String: Any] = ["CFBundleIdentifier": "org.omacvm.ubuntu",
+        "CFBundleShortVersionString": "0.1", "CFBundleVersion": String(build), "UbuntuVMDevBuild": true]
+    try! PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        .write(to: app.appendingPathComponent("Contents/Info.plist"))
+    return app
+}
+let oldDev = devApp(userApps, "UbuntuVM", build: 9)
+let newDev = devApp(sysApps, "Renamed Ubuntu", build: 10)
+let incoming = devApp(downloads, "UbuntuVM", build: 11)
+let ubuntu = InstallMemory(defaults: defaults, bundleID: "org.omacvm.ubuntu", appFolders: [userApps, sysApps])
+ubuntu.markInstalled(oldDev)
+expect("newest installed dev build wins over remembered copy", ubuntu.previousInstall(excluding: incoming).map(InstallMemory.path) == InstallMemory.path(newDev))
+expect("build 10 is newer than build 9", InstallMemory.isNewer(newDev, than: oldDev))
+expect("build 9 cannot downgrade build 10", !InstallMemory.isNewer(oldDev, than: newDev))
+expect("same build is not an update", !InstallMemory.isNewer(newDev, than: newDev))
+expect("user-visible dev version", InstallMemory.displayVersion(of: newDev) == "0.1 Dev Build #10")
+let legacy = makeApp(custom, "Legacy", id: "org.omacvm.ubuntu", version: "3.4.1")
+expect("dev numbering supersedes upstream version", InstallMemory.isNewer(oldDev, than: legacy))
+expect("legacy version cannot downgrade dev build", !InstallMemory.isNewer(legacy, than: oldDev))
+expect("dist copy is only an installer", !ubuntu.isInstalled(incoming, allowSkipped: false))
+
 defaults.removePersistentDomain(forName: suite)
 print(failed == 0 ? "all install-defaults checks passed" : "\(failed) install-defaults check(s) failed")
 exit(failed == 0 ? 0 : 1)

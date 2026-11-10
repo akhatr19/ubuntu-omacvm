@@ -11,7 +11,7 @@ enum Installer {
     }
 
     static var isInstalled: Bool {
-        memory.isInstalled(thisCopy, allowSkipped: !Product.isUbuntu) || ProcessInfo.processInfo.environment["OMACVM_RESOURCES"] != nil
+        memory.isInstalled(thisCopy, allowSkipped: !Product.isUbuntu) || (!Product.isUbuntu && ProcessInfo.processInfo.environment["OMACVM_RESOURCES"] != nil)
     }
 
     /// Where this copy is, as the user sees it. A download that macOS runs
@@ -81,6 +81,7 @@ enum Installer {
     /// new app. Under another name it is signed again (ad hoc); under its own
     /// it keeps its signature (a release's Developer ID).
     static func install(name: String, into folder: URL) throws -> URL {
+        guard validName(name) else { throw HelperError.io("Choose a valid app name.") }
         let fm = FileManager.default
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
         let target = folder.appendingPathComponent("\(name).app")
@@ -88,16 +89,37 @@ enum Installer {
             throw HelperError.io("this app is already there under that name")
         }
         if fm.fileExists(atPath: target.path) {
+            if Product.isUbuntu {
+                guard InstallMemory.bundleID(of: target) == Bundle.main.bundleIdentifier else {
+                    throw HelperError.io("A different app already exists at \(target.path). Choose another location.")
+                }
+                guard InstallMemory.isNewer(thisCopy, than: target) else {
+                    throw HelperError.io("\(InstallMemory.displayVersion(of: target)) is already installed. Open it instead.")
+                }
+            }
             guard !inUse(target) else {
                 throw HelperError.io("\(name) in \(folder.path) is running. Quit it (and its VM) first")
             }
-            try fm.trashItem(at: target, resultingItemURL: nil)
         }
-        try fm.copyItem(at: Bundle.main.bundleURL, to: target)
-        if name == Product.name {
-            markInstalled(target)
-            return target
+        // Prepare the complete signed copy before moving the installed app.
+        let staged = folder.appendingPathComponent(".\(UUID().uuidString).app")
+        defer { try? fm.removeItem(at: staged) }
+        try fm.copyItem(at: Bundle.main.bundleURL, to: staged)
+        if name != Product.name { try rename(staged, to: name) }
+        let backup = folder.appendingPathComponent(".\(UUID().uuidString).app")
+        let replacing = fm.fileExists(atPath: target.path)
+        if replacing { try fm.moveItem(at: target, to: backup) }
+        do { try fm.moveItem(at: staged, to: target) }
+        catch {
+            if replacing { try? fm.moveItem(at: backup, to: target) }
+            throw error
         }
+        if replacing { try? fm.trashItem(at: backup, resultingItemURL: nil) }
+        markInstalled(target)
+        return target
+    }
+
+    private static func rename(_ target: URL, to name: String) throws {
         let plist = target.appendingPathComponent("Contents/Info.plist")
         let data = try Data(contentsOf: plist)
         guard var info = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
@@ -117,8 +139,6 @@ enum Installer {
         try sign.run()
         sign.waitUntilExit()
         guard sign.terminationStatus == 0 else { throw HelperError.io("could not sign \(target.path)") }
-        markInstalled(target)
-        return target
     }
 }
 
@@ -155,7 +175,7 @@ struct InstallView: View {
 
     var body: some View {
         WindowShell {
-            WindowHeader(title: "Install \(Product.name)", facts: Product.isUbuntu ? "Copy UbuntuVM to Applications. Your Ubuntu VMs and files stay where they are." : "Its name shows in the Dock and the menu bar while \(Product.guestName) runs.") {
+            WindowHeader(title: "\(updating ? "Update" : "Install") \(Product.name)", facts: Product.isUbuntu ? "\(Product.buildLabel). Your Ubuntu VMs and files stay where they are." : "Its name shows in the Dock and the menu bar while \(Product.guestName) runs.") {
                 AppIconButton()
             } trailing: {
                 if !Product.isUbuntu {
@@ -164,16 +184,29 @@ struct InstallView: View {
                         onDone()
                     }
                 }
-                Button(Product.isUbuntu ? "Install and Open" : "Install") { install() }
+                if Product.isUbuntu, let previous = memory.previousInstall(excluding: Installer.thisCopy) {
+                    Button("Open Installed App") { open(previous) }
+                }
+                Button(Product.isUbuntu ? (updating ? "Update and Open" : "Install and Open") : "Install") { install() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!Installer.validName(name))
+                    .disabled(!Installer.validName(name) || (Product.isUbuntu && !canInstall))
                     .layoutProbe("start")
             }
         } notices: {
             if let error { MessageStrip(text: error, error: true) }
         } content: {
-            SectionTitle(text: "Install", first: true)
+            if Product.isUbuntu, let previous = memory.previousInstall(excluding: Installer.thisCopy) {
+                SectionTitle(text: "Installed app", first: true)
+                Card {
+                    SettingRow(title: InstallMemory.displayVersion(of: previous), subtitle: previous.path, probe: "install-existing") {
+                        Text(InstallMemory.isNewer(Installer.thisCopy, than: previous) ? "Update available"
+                             : (InstallMemory.isNewer(previous, than: Installer.thisCopy) ? "Installed build is newer" : "Already up to date"))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            SectionTitle(text: "Install", first: !Product.isUbuntu || memory.previousInstall(excluding: Installer.thisCopy) == nil)
             Card {
                 SettingRow(title: "Name", probe: "install-name") {
                     if choice == 2 {
@@ -209,12 +242,36 @@ struct InstallView: View {
         }
     }
 
+    private var updating: Bool { Product.isUbuntu && memory.previousInstall(excluding: Installer.thisCopy) != nil }
+
+    private var canInstall: Bool {
+        guard !Installer.isSelf(name: name, in: folder) else { return false }
+        if let previous = memory.previousInstall(excluding: Installer.thisCopy),
+           !InstallMemory.isNewer(Installer.thisCopy, than: previous) { return false }
+        return true
+    }
+
+    private func open(_ app: URL) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        config.arguments = ["--installed-by", String(ProcessInfo.processInfo.processIdentifier)]
+        NSWorkspace.shared.openApplication(at: app, configuration: config) { _, error in
+            DispatchQueue.main.async {
+                if let error { self.error = "Could not open \(app.path): \(error.localizedDescription)" }
+                else {
+                    Installer.registerInstalledCopy(app, previous: nil)
+                    NSApp.terminate(nil)
+                }
+            }
+        }
+    }
+
     /// Says so when Install replaces a copy that is there already.
     private var replaced: String? {
         guard Installer.validName(name), !Installer.isSelf(name: name, in: folder) else { return nil }
         let target = folder.appendingPathComponent("\(name).app")
         guard FileManager.default.fileExists(atPath: target.path) else { return nil }
-        let version = InstallMemory.version(of: target).map { " \($0)" } ?? ""
+        let version = Product.isUbuntu ? " " + InstallMemory.displayVersion(of: target) : (InstallMemory.version(of: target).map { " \($0)" } ?? "")
         return "Replaces \(name)\(version) in this folder. Your VMs and settings stay."
     }
 
@@ -234,6 +291,7 @@ struct InstallView: View {
     }
 
     private func install() {
+        if Product.isUbuntu && !canInstall { return }
         if Installer.isSelf(name: name, in: folder) {
             Installer.markInstalled(Bundle.main.bundleURL)
             onDone()
