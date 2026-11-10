@@ -1,5 +1,55 @@
 # Developer environments
 
+## VMs and Projects in the app
+
+The UbuntuVM home screen has two views. **VMs** lists Ubuntu machines with Start,
+Stop, Terminal, Open Desktop, VS Code and a More menu for settings and ports.
+**Projects** remembers Linux folders and the VM/editor each uses. Several projects
+can share a VM; a project can instead get separate pinned tools through
+**New VM → Reproducible Developer Environment → Create & Open Project**. That
+flow copies the selected Mac project's files once after provisioning.
+
+**Add Project** can attach an existing Linux folder, clone an HTTPS/SSH Git
+repository, import a Mac folder, or create an empty folder. Opening a project
+starts its environment and waits for authenticated SSH. Managed environments
+start headless; an existing desktop VM starts through its desktop launcher.
+Terminal opens at the Linux folder, and VS Code uses Remote SSH. Git is installed
+if missing in an ordinary desktop VM; locked developer environments keep their
+provisioned tools. SSH cloning uses credentials available in Ubuntu; no Mac
+private key is copied automatically.
+
+Project actions include a Dev Container check, editor opening, lock verification,
+import and export. Dev Container opening checks for `.devcontainer/devcontainer.json`
+or `.devcontainer.json` and a running Docker engine in Ubuntu, then opens the
+Linux folder through Remote SSH. Select **Dev Containers: Reopen in Container**
+in VS Code's prompt/command palette; the Remote SSH and Dev Containers extensions
+are required. This uses VS Code's documented remote-host workflow rather than
+undocumented container URI formats. A Docker-enabled environment profile supplies
+the guest engine. Ordinary desktop VMs need Docker installed separately.
+
+Imports preserve existing Linux files and exclude node_modules/.venv and Mac
+metadata. Exports create a private, new `.tar.gz` archive; the app never extracts
+guest-controlled paths onto the Mac. Exports are capped at 4 GiB and leave at
+least 2 GiB free. **Forget Project** removes the shortcut, keeping Linux files and
+the VM. Projects are saved in the app's preferences, outside the Git repository.
+
+**Ports & SSH** separates localhost addresses from LAN addresses, includes browser,
+copy and connection-test actions, and reports developer forward conflicts.
+**SSH Keys & Settings** edits forwards while stopped, with **Find Free Port** for
+choosing a host port. Changes publish at the next boot. HTTP browser buttons are
+for websites; database and other protocols use the same addresses in their clients.
+Testing localhost confirms only the Mac listener, not remote-LAN reachability or
+application health.
+
+The equivalent CLI is `uvm workspace --vm VM_FOLDER --project /home/USER/Projects/NAME
+ACTION [SOURCE]`. Desktop VMs also need `--qga SOCKET`, supplied by the GUI. Actions
+include `info`, `init`, `clone`, `import`, `export`, `terminal`, `code`, and
+`container`. SSH host identity is pinned through the VM's private guest agent.
+
+Agent-owned desktop VMs and resource pooling are a future design, described in
+[agent-vms.md](agent-vms.md). This build does not add agent computer-use control,
+performance presets or diagnostics/recovery flows.
+
 `uvm` runs Linux tools in isolated Ubuntu ARM64 environments while macOS keeps
 the editor, browser and terminal. It reuses UbuntuVM's accelerated QEMU,
 Vulkan/OpenCL drivers and free-page reporting. No Docker Desktop is required.
