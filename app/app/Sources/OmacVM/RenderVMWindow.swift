@@ -308,6 +308,7 @@ enum RenderVMWindow {
             if let savedFast { try? savedFast.write(to: config.folder.appendingPathComponent("fast-network")) }
             sheet("sheet-developer-environments") { DeveloperEnvironmentsView(state: state) }
             sheet("sheet-developer-create") { NewDeveloperEnvironmentView(root: tmp) }
+            sheet("sheet-ubuntu-gesture-permissions") { UbuntuGesturesPermissions() }
         }
         usbPictures(folder: folder, into: dir)
         sheet("sheet-8-icon-looks") { AppIconPicker(selected: IconTheme.all[0]) { _ in } }

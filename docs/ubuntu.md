@@ -242,3 +242,18 @@ and includes **Install / Repair Helper…**. Only the person grants those macOS
 permissions. Existing legacy helper paths remain detectable during migration.
 Internal `org.omacvm.*` service identifiers and compatibility commands are kept;
 they do not indicate that a separate Omarchy installation is running.
+
+### Gestures permissions
+
+In **Input → Gestures helper → Set Up Permissions**, use **Show Exact Helper**
+or **Copy Helper Path**. Grant access to `~/Applications/UbuntuVMGestures.app`,
+not the UbuntuVM launcher or a helper nested inside a build. In both Accessibility
+and Input Monitoring, click **+**, press **Command–Shift–G**, paste that path and
+select the helper. Enable its switch. Remove obsolete helper entries if they
+remain enabled but do not work, then add this exact copy again.
+
+Use **Restart Helper** after granting access and **Check Permissions Again**.
+The two grants are shown separately from the running helper's own log, with its
+process identity checked; an old report or the launcher's privacy identity cannot
+stand in for the current helper. **Repair Helper** reinstalls the packaged helper
+if it is missing. Your VM disk and settings are preserved.
