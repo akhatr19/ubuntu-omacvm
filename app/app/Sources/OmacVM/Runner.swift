@@ -419,12 +419,14 @@ final class Runner {
                     "-device", "virtio-net-pci,id=nic0,netdev=fast,mac=\(choice.mac),romfile="]
         }
         // QEMU's user network: the Mac is 10.0.2.2 for the VM; SSH from the Mac on 127.0.0.1.
-        return ["-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:\(c.sshPort)-:22",
+        let published = Product.isUbuntu ? (try? UbuntuNetworking.read(c))?.ports.map(\.qemu) ?? [] : []
+        return ["-netdev", (["user,id=net0", "hostfwd=tcp:127.0.0.1:\(c.sshPort)-:22"] + published).joined(separator: ","),
                 "-device", "virtio-net-pci,netdev=net0,mac=\(choice.mac),romfile="]
     }
 
     func start() throws {
         let c = config
+        if Product.isUbuntu { _ = try UbuntuNetworking.read(c) }
         startAudioThread = Settings.audioThread
         (audioDeviceStart, audioFramesStart) = AudioLatencyWatch.outputNow()
         try FileManager.default.createDirectory(at: c.folder.appendingPathComponent("logs"),
@@ -566,6 +568,10 @@ final class Runner {
         if usbOn { env["OMACVM_USB_REQUEST"] = USBRun.requestName() }
         // The VM's graphics memory on the Mac, for this app and omacvm check (GPUMemory).
         env["OMACVM_GPU_MEMORY_STATUS"] = GPUMemory.file(for: c).path
+        if (try? String(contentsOf: c.folder.appendingPathComponent("guest-os"), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) == "ubuntu" {
+            env["OMACVM_GPU_MEMORY_DESKTOP"] = "gnome-shell"
+        }
         try? FileManager.default.removeItem(at: GPUMemory.file(for: c))
         // QEMU's reclaim fix says there when macOS keeps the pages the VM gives
         // back (GPUMemoryWatch turns its give-back while macOS compresses off).
@@ -806,9 +812,18 @@ final class Runner {
         let agentDeadline = Date().addingTimeInterval(600)
         Thread.detachNewThread { [weak self] in
             GuestAgent.hold(socketPath: agentPath)
+            if Product.isUbuntu, let error = UbuntuForkIdentity.prepare(c, agent: agentPath, pid: pid) {
+                Task { @MainActor in self?.appendLog("UbuntuVM: " + error) }
+                return
+            }
             let r = VMKey.ensure(folder: folder, agentPath: agentPath, pingWait: agentDeadline.timeIntervalSinceNow,
                                  running: { kill(pid, 0) == 0 })
             if let line = SSHRepair.logLine(r, stillRunning: kill(pid, 0) == 0) {
+                Task { @MainActor in self?.appendLog(line) }
+            }
+            if Product.isUbuntu, kill(pid, 0) == 0,
+               let line = UbuntuNetworking.apply(c, agent: agentPath, qmp: c.qmpSocket.path) {
+                try? String(line.prefix(2048)).write(to: c.folder.appendingPathComponent("developer-network-status"), atomically: true, encoding: .utf8)
                 Task { @MainActor in self?.appendLog(line) }
             }
             if let on = imePending {

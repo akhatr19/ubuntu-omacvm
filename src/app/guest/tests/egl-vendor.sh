@@ -28,7 +28,7 @@ cc -shared -fPIC -O2 -Wall -Werror -fvisibility=hidden -Wl,-soname,libEGL_omacvm
 cc -shared -fPIC -O2 -Wall -Werror -fvisibility=hidden -DMESA_EGL="\"$T/none/libEGL_mesa.so.0\"" \
   -o "$T/nomesa.so" "$src" -ldl || exit 1
 cc -O2 -Wall -pthread -o "$T/egl-vendor" "$here/egl-vendor.c" -ldl || exit 1
-for exe in Hyprland Xwayland quickshell hyprlock sddm-greeter-qt6 ghostty foot chromium; do cp "$T/egl-vendor" "$T/$exe"; done
+for exe in Hyprland Xwayland quickshell hyprlock sddm-greeter-qt6 gnome-shell ghostty foot chromium; do cp "$T/egl-vendor" "$T/$exe"; done
 
 # run PROGRAM LIBRARY MODE (the record goes to $T/run/omacvm)
 run() {
@@ -60,7 +60,7 @@ rm -f "$T/host.env"
 run "$T/egl-vendor" "$T/nomesa.so" nomesa
 run "$T/egl-vendor" "$T/libEGL_omacvm.so.0" abi1
 # the desktop's own processes (Omarchy 4's lock screen is quickshell's)
-for exe in Hyprland Xwayland quickshell hyprlock sddm-greeter-qt6; do
+for exe in Hyprland Xwayland quickshell hyprlock sddm-greeter-qt6 gnome-shell; do
   run "$T/$exe" "$T/libEGL_omacvm.so.0" desktop
 done
 # the library exports only glvnd's entry point

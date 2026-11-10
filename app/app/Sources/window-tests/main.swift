@@ -1204,5 +1204,25 @@ do {
     }
 }
 
+// MARK: Ubuntu developer network boundaries
+var devNetwork = DeveloperNetwork()
+expect(!devNetwork.sshLAN && devNetwork.ports.isEmpty, "developer networking stays local by default")
+devNetwork.sshLAN = true
+expect(devNetwork.problem(sshPort: 2222) != nil, "LAN SSH cannot take the private management port")
+devNetwork.sshPort = 2223
+devNetwork.ports = [DeveloperPort(host: 8080, guest: 80, lan: true)]
+expect(devNetwork.problem(sshPort: 52224) == nil, "explicit LAN SSH and HTTP ports are valid")
+expect(devNetwork.ports[0].qemu == "hostfwd=tcp:0.0.0.0:8080-:80", "QEMU publishes only explicitly LAN-scoped rules")
+devNetwork.ports.append(DeveloperPort(host: 8080, guest: 3000))
+expect(devNetwork.problem(sshPort: 52224) != nil, "duplicate host ports refused")
+devNetwork.ports = []
+devNetwork.publicKeys = "-----BEGIN OPENSSH PRIVATE KEY-----"
+expect(devNetwork.problem(sshPort: 52224) != nil, "private keys rejected by the GUI")
+devNetwork.publicKeys = ""
+let networkData = try! JSONEncoder().encode(devNetwork)
+let networkObject = try! JSONSerialization.jsonObject(with: networkData) as! [String: Any]
+expect(networkObject["idle_minutes"] is NSNull, "disabling idle shutdown encodes an explicit null override")
+expect((try? JSONDecoder().decode(DeveloperNetwork.self, from: networkData)) == devNetwork, "GUI network settings round trip")
+
 print(failures == 0 ? "all passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)

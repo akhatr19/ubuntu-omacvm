@@ -9,6 +9,9 @@ import OmacVMFeatures
 /// without the person: Update VM installs the helpers, and they ask macOS
 /// for their permissions themselves.
 extension MacSetup {
+    static func displayName(_ text: String) -> String {
+        Product.isUbuntu ? text.replacingOccurrences(of: "OmacVM Gestures", with: "UbuntuVM Gestures") : text
+    }
     /// `src/mac/install.sh --status` from the app's copy of OmacVM for VM
     /// `c` (about 0.1 s, reads only). Never on the main thread; `notch` is
     /// Mac.hasNotch, read there. nil when it could not say.
@@ -38,8 +41,8 @@ extension MacSetup {
     @MainActor func ask(vm: String) -> Answer {
         let a = NSAlert()
         a.alertStyle = .warning
-        a.messageText = title(vm: vm)
-        a.informativeText = message(vm: vm)
+        a.messageText = Self.displayName(title(vm: vm))
+        a.informativeText = Self.displayName(message(vm: vm))
         a.addButton(withTitle: button)
         a.addButton(withTitle: "Later").keyEquivalent = "\u{1b}"
         a.window.level = .floating

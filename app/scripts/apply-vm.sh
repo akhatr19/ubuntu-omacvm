@@ -11,12 +11,16 @@ set -euo pipefail
 VM_DIR=${1:?usage: apply-vm.sh VM_DIR [--no-mac | --image] [--reset-host-key]}
 shift
 extra=()
-for a in "$@"; do
+switches=()
+while (( $# )); do
+  a=$1
   case $a in
     --no-mac|--reset-host-key) extra+=("$a") ;;
     --image) extra+=(--no-mac --no-token --no-tools) ;;
+    --feature) switches+=("${2:?--feature NAME=on|off}"); extra+=(--feature "$2"); shift ;;
     *) echo "apply-vm.sh: unknown option $a (--no-mac, --image, --reset-host-key)" >&2; exit 2 ;;
   esac
+  shift
 done
 HERE=$(cd "$(dirname "$0")" && pwd)
 source "$HERE/vm-common.sh"
@@ -28,6 +32,37 @@ if (( rc == 2 )); then
   die "$NAME doesn't let this Mac in over SSH: it does not know this VM folder's key. Start it once in the app (it adds the key as it starts), then try again."
 elif (( rc != 0 )); then
   die "$NAME does not answer over SSH (127.0.0.1:$SSH_PORT): $SSH_WHY."
+fi
+if [[ $(cat "$VM_DIR/guest-os" 2>/dev/null) == ubuntu ]]; then
+  [[ $NAME =~ ^[A-Za-z0-9][A-Za-z0-9\ ._-]{0,63}$ && $VM_USER =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "invalid Ubuntu VM name or user"
+  feats=${FEATURES:-}
+  [[ ! -f $VM_DIR/features ]] || feats=$(cat "$VM_DIR/features")
+  [[ -n $feats ]] || feats='gpu-compute=on battery=on camera=on'
+  for switch in ${switches[@]+"${switches[@]}"}; do
+    [[ $switch =~ ^(battery|camera|gestures|drag-drop)=(on|off)$ ]] || die "Ubuntu supports switching battery, camera, gestures and drag-drop here"
+    feats=$(printf '%s\n' "$feats" | sed -E "s/(^| )${switch%%=*}=(on|off)( |$)/ /g")
+    feats="$feats $switch"
+  done
+  for f in $feats; do [[ $f =~ ^[a-z0-9-]+=(on|off)$ ]] || die "invalid Ubuntu feature: $f"; done
+  gesture_token=${OMACVM_UBUNTU_GESTURES_TOKEN:-$HOME/Library/Application Support/omacvm-bridge/token}
+  if [[ " $feats " == *' gestures=on '* && ! -s $gesture_token ]]; then
+    echo 'Set up the Mac gestures helper with app/scripts/install-ubuntu-gestures.sh first.' >&2
+    exit 3
+  fi
+  COPYFILE_DISABLE=1 tar --no-xattrs -C "$OMACVM_SRC" -czf - . |
+    vssh "mkdir -p /usr/local/share/omacvm; tar --no-same-owner -xzf - -C /usr/local/share/omacvm"
+  if [[ " $feats " == *' gestures=on '* ]]; then
+    vssh "bash /usr/local/share/omacvm/ubuntu/guest/install-token.sh '$VM_USER'" < "$gesture_token"
+    source "$OMACVM_SRC/lib/mac-setup.sh"
+    mac_setup_write "$VM_DIR" "$gesture_token"
+  fi
+  vssh "bash /usr/local/share/omacvm/ubuntu/guest/install.sh '$VM_USER' '$feats' '$NAME'"
+  printf '%s\n' "$feats" > "$VM_DIR/features.new"
+  mv "$VM_DIR/features.new" "$VM_DIR/features"
+  sed '/^FEATURES=/d' "$VM_DIR/vm.env" > "$VM_DIR/vm.env.new"
+  mv "$VM_DIR/vm.env.new" "$VM_DIR/vm.env"
+  cp "$OMACVM_SRC/VERSION" "$VM_DIR/omacvm-version"
+  exit
 fi
 
 # A copy of src/ only: the Mac installers build next to their sources, never

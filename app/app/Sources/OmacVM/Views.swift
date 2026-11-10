@@ -39,6 +39,7 @@ enum Screen: Equatable {
 @MainActor
 final class AppState: ObservableObject {
     @Published var screen: Screen = .setup
+    @Published var showHome = true
     @Published var config: VMConfig
     /// A line under the header: red unless messageIsInfo.
     @Published var message: String? { didSet { if message == nil { messageIsInfo = false } } }
@@ -110,7 +111,7 @@ final class AppState: ObservableObject {
         if let w = creator.warning {
             say(w)
         } else if updated, let v = config.guestVersion {
-            tell("OmacVM in \(config.name) is now \(v).")
+            tell("\(Product.name) in \(config.name) is now \(v).")
         } else {
             message = nil
         }
@@ -146,13 +147,17 @@ final class AppState: ObservableObject {
     /// Update VM (the header's button, the notice's, the question before a
     /// start): the VM started without a window, OmacVM and its Mac helpers
     /// brought up to this app's, shut down.
-    func updateVM(askMarker: Bool = true) {
+    func updateVM(askMarker: Bool = true, features: [String] = []) {
+        if Product.isUbuntu, DeveloperActions.name(config) != nil {
+            say("Developer environments use uvm provision to replay their lock. Create a new pinned base to upgrade Ubuntu.")
+            return
+        }
         // A test build never updates a VM of the installed app.
         if let why = Paths.startProblem(config.folder) { say(why); startAfterUpdate = false; return }
         // Not shut down cleanly, or copied while it ran: asked first.
         if askMarker, !RunMarker.confirmStart(config) { startAfterUpdate = false; return }
         message = nil
-        creator.update(config: config)
+        creator.update(config: config, features: features)
         screen = .building
     }
 
@@ -275,7 +280,7 @@ final class AppState: ObservableObject {
         }
         var c = VMConfig()
         // Never the folder of a VM that is there (one --vm did not name, say).
-        c.name = VMPick.freeName(root: Paths.vmsRoot, taken: VMConfig.all().map(\.name))
+        c.name = VMPick.freeName(Product.guestName, root: Paths.vmsRoot, taken: VMConfig.all().map(\.name))
         let t = Mac.tier(1)
         c.cpus = t.cpus
         c.memoryMB = t.memoryGB * 1024
@@ -339,6 +344,9 @@ struct RootView: View {
     var preview: RenderVMWindow.Preview? = nil
 
     var body: some View {
+        if Product.isUbuntu && state.showHome && preview == nil && (state.screen == .ready || state.screen == .setup) {
+            UbuntuHomeView(state: state)
+        } else {
         switch state.screen {
         case .install: InstallView(onDone: { state.installDone() })
         case .setup: SetupView(state: state)
@@ -346,6 +354,7 @@ struct RootView: View {
         case .ready: ReadyView(state: state, preview: preview)
         case .driveMissing: DriveMissingView(state: state)
         case .unavailable: UnavailableView(state: state)
+        }
         }
     }
 }
@@ -355,6 +364,7 @@ struct SetupView: View {
     @ObservedObject var state: AppState
     @State private var password = ""
     @State private var password2 = ""
+    @State private var ubuntuISO: URL?
     @State private var tier = 1
     @State private var bridge = true
     @State private var gestures = true
@@ -372,14 +382,14 @@ struct SetupView: View {
         NavItem(id: "resources", title: "Resources", symbol: "cpu", rgb: 0x0A84FF),
         NavItem(id: "features", title: "Features", symbol: "switch.2", rgb: 0x2DB44E),
         NavItem(id: "storage", title: "Storage", symbol: "externaldrive", rgb: 0x5E5CE6),
-    ]
+    ].filter { !Product.isUbuntu || $0.id != "features" }
 
     private var userOK: Bool {
         state.config.user.range(of: "^[a-z_][a-z0-9_-]{0,31}$", options: .regularExpression) != nil
     }
     private var canBuild: Bool {
         userOK && !password.isEmpty && password == password2 && VMConfig.validName(state.config.name)
-            && !nameTaken && prebuilt != .checking
+            && !nameTaken && (Product.isUbuntu ? ubuntuISO != nil && Mac.tier(tier).memoryGB >= 6 : prebuilt != .checking)
     }
     /// A VM (or a folder) of that name is there: a build would take over its disk.
     /// The shown VM's own folder (a build that did not finish, built again) is not taken.
@@ -399,9 +409,10 @@ struct SetupView: View {
 
     var body: some View {
         WindowShell(nav: Self.nav) {
-            WindowHeader(title: "New Omarchy VM", facts: "Arch Linux ARM with Omarchy, made into a VM on this Mac.") {
+            WindowHeader(title: "New \(Product.guestName) VM", facts: Product.isUbuntu ? "Ubuntu Desktop 26.10 ARM64 with GNOME and accelerated graphics." : "Arch Linux ARM with Omarchy, made into a VM on this Mac.") {
                 AppIconButton()
             } trailing: {
+            if Product.isUbuntu { Button("VMs & Projects") { state.showHome = true } }
                 // A VM copied here or on another drive: show it instead.
                 Button("Open Existing VM…") { state.openExisting() }
                     .disabled(state.storage.moving != nil)
@@ -421,6 +432,7 @@ struct SetupView: View {
             sections
         }
         .task {
+            if Product.isUbuntu { prebuilt = .none; return }
             if let pb = await PrebuiltImage.lookup() { prebuilt = .found(pb) } else { prebuilt = .none }
         }
     }
@@ -443,9 +455,9 @@ struct SetupView: View {
                            subtitleIsError: true, probe: "user") {
                     TextField("User name", text: $state.config.user).labelsHidden().frame(width: 240)
                 }
-                SettingRow(title: "Full name", probe: "full-name") {
+                if !Product.isUbuntu { SettingRow(title: "Full name", probe: "full-name") {
                     TextField("Full name", text: $state.config.fullName).labelsHidden().frame(width: 240)
-                }
+                } }
                 SettingRow(title: "Password", probe: "password") {
                     SecureField("Password", text: $password).labelsHidden().frame(width: 240)
                 }
@@ -454,7 +466,7 @@ struct SetupView: View {
                     SecureField("Password again", text: $password2).labelsHidden().frame(width: 240)
                 }
             }
-            Text("Keyboard \(state.config.keyboard), \(state.config.timeZone), \(state.config.language), from the Mac.")
+            Text(Product.isUbuntu ? "Keyboard and language can be changed in Ubuntu Settings after installation." : "Keyboard \(state.config.keyboard), \(state.config.timeZone), \(state.config.language), from the Mac.")
                 .font(.subheadline).foregroundStyle(.secondary)
                 .padding(.top, 8).padding(.leading, 4)
         }
@@ -462,7 +474,9 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 0) {
             SectionTitle(text: "Resources")
             Card {
-                SettingRow(title: "Resources", subtitle: "\(Mac.tier(tier).cpus) CPUs and \(Mac.tier(tier).memoryGB) GB memory of this Mac's \(Mac.cores) and \(Mac.memoryGB) GB. More later in the VM's settings.",
+                SettingRow(title: "Resources", subtitle: Product.isUbuntu && Mac.tier(tier).memoryGB < 6
+                           ? "Ubuntu's installer needs at least 6 GB of RAM. Choose a larger resource tier."
+                           : "\(Mac.tier(tier).cpus) CPUs and \(Mac.tier(tier).memoryGB) GB memory of this Mac's \(Mac.cores) and \(Mac.memoryGB) GB. More later in the VM's settings.",
                            probe: "resources") {
                     Picker("Resources", selection: $tier) {
                         ForEach(0..<4) { Text(Mac.tierNames[$0]).tag($0) }
@@ -474,7 +488,7 @@ struct SetupView: View {
                 SettingRow(title: "Graphics", info: GraphicsPicker.help, probe: "graphics") {
                     GraphicsPicker.picker($graphics).labelsHidden().fixedSize()
                 }
-                SettingRow(title: "Disk", subtitle: "It takes space on the Mac only as Omarchy fills it.", probe: "disk") {
+                SettingRow(title: "Disk", subtitle: "It takes space on the Mac only as the VM fills it.", probe: "disk") {
                     Picker("Disk", selection: $state.config.diskGB) {
                         ForEach([64, 128, 256, 512], id: \.self) { Text("\($0) GB").tag($0) }
                     }
@@ -484,6 +498,7 @@ struct SetupView: View {
             }
         }
         .spySection("resources")
+        if !Product.isUbuntu {
         VStack(alignment: .leading, spacing: 0) {
             SectionTitle(text: "Features")
             Card {
@@ -500,6 +515,7 @@ struct SetupView: View {
             }
         }
         .spySection("features")
+        }
         VStack(alignment: .leading, spacing: 0) {
             SectionTitle(text: "Storage")
             Card {
@@ -514,24 +530,35 @@ struct SetupView: View {
     /// Shown at once; the choice comes when the lookup is done, so nothing
     /// changes under the user's hands later on.
     @ViewBuilder private var how: some View {
-        switch prebuilt {
-        case .checking:
-            SettingRow(title: "How", subtitle: "Looking for a VM already built for this version…", probe: "how") {
-                ProgressView().controlSize(.small)
-            }
-        case .found(let pb):
-            SettingRow(title: "How", subtitle: usePrebuilt ? "Download it ready made (\(pb.size), Omarchy \(pb.omarchy)): a few minutes."
-                                                         : "Build it here from Arch Linux ARM and Omarchy: 10 to 30 minutes.", probe: "how") {
-                Picker("How", selection: $usePrebuilt) {
-                    Text("Download").tag(true)
-                    Text("Build Here").tag(false)
+        if Product.isUbuntu {
+            SettingRow(title: "Ubuntu ISO", subtitle: ubuntuISO?.lastPathComponent ?? "Choose ubuntu-26.10-desktop-arm64.iso. Its checksum is verified before installation.", probe: "ubuntu-iso") {
+                Button("Choose ISO…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = false
+                    panel.allowsMultipleSelection = false
+                    if panel.runModal() == .OK { ubuntuISO = panel.url }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
             }
-        case .none:
-            SettingRow(title: "How", subtitle: "Built here from Arch Linux ARM and Omarchy: 10 to 30 minutes (no ready made VM for this version).", probe: "how")
+        } else {
+            switch prebuilt {
+            case .checking:
+                SettingRow(title: "How", subtitle: "Looking for a VM already built for this version…", probe: "how") {
+                    ProgressView().controlSize(.small)
+                }
+            case .found(let pb):
+                SettingRow(title: "How", subtitle: usePrebuilt ? "Download it ready made (\(pb.size), Omarchy \(pb.omarchy)): a few minutes."
+                                                             : "Build it here from Arch Linux ARM and Omarchy: 10 to 30 minutes.", probe: "how") {
+                    Picker("How", selection: $usePrebuilt) {
+                        Text("Download").tag(true)
+                        Text("Build Here").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+            case .none:
+                SettingRow(title: "How", subtitle: "Built here from Arch Linux ARM and Omarchy: 10 to 30 minutes (no ready made VM for this version).", probe: "how")
+            }
         }
     }
 
@@ -552,11 +579,18 @@ struct SetupView: View {
         state.config.cpus = t.cpus
         state.config.memoryMB = t.memoryGB * 1024
         state.config.sshPort = Mac.freePort(from: 52222)
-        state.config.hostname = "omarchy"
+        state.config.hostname = Product.isUbuntu ? "ubuntu" : "omarchy"
         // Omanotch on with a notch: full screen sits below the camera and
         // Omanotch fills the strip beside it.
         state.config.features = NewVMFeatures.string(bridge: bridge, gestures: gestures, autologin: autologin,
                                                      hasBattery: Mac.hasBattery, hasNotch: Mac.hasNotch)
+        if Product.isUbuntu {
+            state.config.features = state.config.features.replacingOccurrences(of: "=on", with: "=off")
+                .replacingOccurrences(of: "gpu-compute=off", with: "gpu-compute=on")
+                .replacingOccurrences(of: "battery=off", with: "battery=on")
+                .replacingOccurrences(of: "camera=off", with: "camera=on")
+                .replacingOccurrences(of: "drag-drop=off", with: "drag-drop=on")
+        }
         locationProblem = nil
         UserDefaults.standard.set(true, forKey: "offeredCLI")
         // A new VM goes into the VMs folder as it is now, under its name; the
@@ -567,7 +601,7 @@ struct SetupView: View {
         state.screen = .building
         var download = false
         if case .found = prebuilt { download = usePrebuilt }
-        state.creator.start(config: state.config, password: password, prebuilt: download, graphics: graphics)
+        state.creator.start(config: state.config, password: password, prebuilt: download, graphics: graphics, ubuntuISO: ubuntuISO)
         password = ""; password2 = ""
     }
 }

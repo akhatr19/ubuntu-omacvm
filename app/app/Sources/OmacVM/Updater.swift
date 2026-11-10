@@ -114,6 +114,7 @@ final class Updater: ObservableObject {
 
     /// nil when this copy can update itself, else why not.
     var unavailableReason: String? {
+        if Product.isUbuntu { return "UbuntuVM updates are built from the Ubuntu fork. Upstream OmacVM releases contain the Omarchy installer." }
         if keys.shipped.isEmpty { return "This build has no release key yet: updates start with a release that has one." }
         if Version(currentVersion) == nil { return "This build (\(currentVersion)) is not a release version." }
         if ProcessInfo.processInfo.environment["OMACVM_RESOURCES"] != nil { return "Updates are off when run from the source tree." }

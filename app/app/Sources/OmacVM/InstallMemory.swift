@@ -29,12 +29,12 @@ struct InstallMemory {
     /// copy installed last, or the user ran this very copy without installing.
     /// An update (the app's own or omacvm update) puts the new version at the
     /// same path, so it is not asked either.
-    func isInstalled(_ app: URL) -> Bool {
+    func isInstalled(_ app: URL, allowSkipped: Bool = true) -> Bool {
         let parent = Self.path(app.deletingLastPathComponent())
         if appFolders.contains(where: { Self.path($0) == parent }) { return true }
         if let last = defaults.string(forKey: Self.installedKey),
            Self.path(URL(fileURLWithPath: last)) == Self.path(app) { return true }
-        return skipped(app)
+        return allowSkipped && skipped(app)
     }
 
     func skipped(_ app: URL) -> Bool {
@@ -70,7 +70,11 @@ struct InstallMemory {
             candidates += items.filter { $0.pathExtension == "app" }
                 .sorted { $0.lastPathComponent < $1.lastPathComponent }
         }
-        return candidates.first { Self.path($0) != mine && Self.bundleID(of: $0) == bundleID }
+        candidates = candidates.filter { Self.path($0) != mine && Self.bundleID(of: $0) == bundleID }
+        if bundleID.hasPrefix("org.omacvm.ubuntu") {
+            candidates.sort { Self.isNewer($0, than: $1) }
+        }
+        return candidates.first
     }
 
     /// What the dialog shows first: the name and folder of the copy installed
@@ -82,6 +86,29 @@ struct InstallMemory {
 
     static func bundleID(of app: URL) -> String? { info(of: app)?["CFBundleIdentifier"] as? String }
     static func version(of app: URL) -> String? { info(of: app)?["CFBundleShortVersionString"] as? String }
+
+    static func devBuild(of app: URL) -> Int? {
+        guard info(of: app)?["UbuntuVMDevBuild"] as? Bool == true,
+              let build = info(of: app)?["CFBundleVersion"] as? String else { return nil }
+        return Int(build)
+    }
+
+    static func displayVersion(of app: URL) -> String {
+        let version = version(of: app) ?? "Unknown version"
+        return devBuild(of: app).map { "\(version) Dev Build #\($0)" } ?? "\(version) (legacy build)"
+    }
+
+    /// Ubuntu dev builds supersede inherited upstream versions (e.g. 3.4.1).
+    static func isNewer(_ app: URL, than other: URL) -> Bool {
+        if let build = devBuild(of: app) {
+            guard let previous = devBuild(of: other) else { return true }
+            let version = version(of: app) ?? "0"
+            let old = Self.version(of: other) ?? "0"
+            return version == old ? build > previous : version.compare(old, options: .numeric) == .orderedDescending
+        }
+        if devBuild(of: other) != nil { return false }
+        return (version(of: app) ?? "0").compare(version(of: other) ?? "0", options: .numeric) == .orderedDescending
+    }
 
     private static func info(of app: URL) -> [String: Any]? {
         guard let data = try? Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")) else { return nil }

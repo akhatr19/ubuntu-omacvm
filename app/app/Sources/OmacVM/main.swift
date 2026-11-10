@@ -44,6 +44,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             buildMenu()
             RenderVMWindow.run(into: URL(fileURLWithPath: args[i + 1]))
         }
+        // A download/build is only an installer. Do not hand over to an older
+        // running copy or start background VM/update work from this bundle.
+        if Product.isUbuntu && !Installer.isInstalled {
+            buildMenu()
+            showWindow()
+            return
+        }
         // Started by update-swap.sh after an update: check that this build
         // works (else the previous version goes back), then start as usual.
         if let i = args.firstIndex(of: "--update-check"), i + 1 < args.count {
@@ -421,7 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: WindowSize.width, height: defaultHeight),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                          backing: .buffered, defer: false)
-        w.title = Product.name
+        w.title = Product.name + (Product.isUbuntu ? " · " + Product.buildLabel : "")
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
         let bar = NSToolbar(identifier: "OmacVM.window")
@@ -475,10 +482,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     enum NetworkStart { case ask, helpersChecked, decided(String?) }
 
     private func startVM(openGLOnce: String? = nil, network: NetworkStart = .ask) {
+        guard !Product.isUbuntu || Installer.isInstalled else { showWindow(); return }
         // A build or an update runs the VM without a window: a second QEMU on
         // its disk (a start from the Dock or `omacvm start`) would corrupt it.
         if state.screen == .building {
             showWindow()
+            return
+        }
+        if Product.isUbuntu, DeveloperActions.name(state.config) != nil {
+            do { try DeveloperActions.open(state.config, "desktop") }
+            catch { state.say(error.localizedDescription) }
             return
         }
         // This app runs the VM already, or a start is on its way: that one goes on.

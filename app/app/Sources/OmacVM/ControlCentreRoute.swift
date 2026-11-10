@@ -45,7 +45,8 @@ final class ControlCentreRoute {
         guard !busy else { return }
         busy = true
         let path = agentPath
-        let wrapper = "[ -x \(Self.script) ] || exit \(Self.tooOld); exec \(Self.script)"
+        let script = Product.isUbuntu ? "/usr/local/lib/omacvm/open-settings" : Self.script
+        let wrapper = "[ -x \(script) ] || exit \(Self.tooOld); exec \(script)"
         Thread.detachNewThread { [weak self] in
             let outcome = GuestAgent.runAndWait(socketPath: path, "/bin/sh", ["-c", wrapper], seconds: 12)
             DispatchQueue.main.async {

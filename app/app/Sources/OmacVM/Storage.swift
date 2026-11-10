@@ -170,7 +170,8 @@ enum Storage {
         p.standardError = FileHandle.nullDevice
         do { try p.run() } catch { return [] }
         let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
+        // EOF is enough here: waitUntilExit spins the calling run loop and
+        // can reenter SwiftUI layout when a status check runs on the main thread.
         return String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init)
     }
 

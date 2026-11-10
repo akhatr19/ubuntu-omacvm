@@ -4,6 +4,7 @@
 #   omacvm                       asks what you want to do: build a VM, change
 #                                its features, update, check
 #   omacvm build                 a new Omarchy VM in OmacVM.app, from nothing
+#   omacvm ubuntu build --iso PATH --user NAME   Ubuntu Desktop ARM64 (docs/ubuntu.md)
 #   omacvm features [--vm NAME]  a VM's features: see them, switch them
 #                                (--in-vm: open the control centre on the VM's desktop)
 #   omacvm enable FEATURE...     switch features on (omacvm enable scroll-momentum)
@@ -82,7 +83,7 @@ if [[ $R != */Contents/Resources/omacvm && -z ${OMACVM_APP_COPY:-} && -z ${OMACV
 fi
 case $cmd in
   "") exec "$C/home.sh" ;;
-  build|apply|check|vms|update|resources|graphics|notch|gestures) exec "$C/$cmd.sh" "$@" ;;
+  build|apply|check|vms|update|resources|graphics|notch|gestures|ubuntu) exec "$C/$cmd.sh" "$@" ;;
   fullscreen) exec "$C/notch.sh" "$@" ;;
   features|enable|disable) exec "$C/features.sh" "$cmd" "$@" ;;
   uninstall) exec "$R/src/mac/uninstall.sh" "$@" ;;
@@ -92,7 +93,7 @@ case $cmd in
     case ${1:-} in
       "") sed -n '2,28s/^# \{0,1\}//p' "$0" ;;
       features|enable|disable) exec "$C/features.sh" "$1" --help ;;
-      build|apply|check|vms|update|resources|graphics|notch|gestures) exec "$C/$1.sh" --help ;;
+      build|apply|check|vms|update|resources|graphics|notch|gestures|ubuntu) exec "$C/$1.sh" --help ;;
       fullscreen) exec "$C/notch.sh" --help ;;
       uninstall) exec "$R/src/mac/uninstall.sh" --help ;;
       report) exec "$C/report.sh" --help ;;

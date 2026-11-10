@@ -13,7 +13,7 @@ import SwiftUI
 enum AppIcon {
     static let changed = Notification.Name("OmacVM.AppIcon.changed")
 
-    static var theme: IconTheme { IconTheme.choice(stored: UserDefaults.standard.object(forKey: IconTheme.key)) }
+    static var theme: IconTheme { IconTheme.choice(stored: Product.isUbuntu ? nil : UserDefaults.standard.object(forKey: IconTheme.key)) }
 
     static func set(_ t: IconTheme) {
         if t.isDefault {
@@ -71,7 +71,7 @@ struct AppIconButton: View {
     var preview: Bool = false
 
     var body: some View {
-        Button { open.toggle() } label: {
+        Button { if !Product.isUbuntu { open.toggle() } } label: {
             Image(nsImage: AppIcon.image(theme, size: size))
                 .resizable()
                 .interpolation(.high)
@@ -80,7 +80,7 @@ struct AppIconButton: View {
         .buttonStyle(.plain)
         .help("\(Product.name)")
         .accessibilityLabel("\(Product.name) icon")
-        .accessibilityHint("Shows other looks for the icon")
+        .accessibilityHint(Product.isUbuntu ? "UbuntuVM" : "Shows other looks for the icon")
         .popover(isPresented: $open, arrowEdge: .bottom) {
             AppIconPicker(selected: theme) { t in
                 AppIcon.set(t)

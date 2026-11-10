@@ -1,0 +1,22 @@
+#!/bin/bash
+# Use an unconfined .deb browser: Snap's Mesa cannot load our host libraries.
+set -euo pipefail
+B=""
+for b in google-chrome-stable brave-browser chromium; do
+  p=$(command -v "$b" || true)
+  [[ -n $p && $p != /snap/* ]] || continue
+  # Ubuntu's /usr/bin/chromium wrapper forwards to Snap too.
+  [[ $b != chromium ]] || ! grep -q '/snap\|snap run' "$p" || continue
+  B=$p; break
+done
+[[ -n $B ]] || { echo "Install an ARM64 .deb build of Chrome or Brave first (see docs/ubuntu.md)" >&2; exit 3; }
+export LIBVA_DRIVER_NAME=omacvm LIBVA_DRIVERS_PATH=/usr/local/lib/dri:/usr/lib/aarch64-linux-gnu/dri
+export VK_DRIVER_FILES=/etc/vulkan/icd.d/omacvm_venus_icd.json
+if [[ ${0##*/} == omacvm-browser-webgpu ]]; then
+  [[ -n ${DISPLAY:-} ]] || { echo "WebGPU launcher requires Xwayland" >&2; exit 1; }
+  export MESA_VK_WSI_DEBUG=sw
+  exec "$B" --user-data-dir="${XDG_CONFIG_HOME:-$HOME/.config}/omacvm-browser-webgpu" \
+    --ozone-platform=x11 --enable-skia-graphite --skia-graphite-dawn-backend=vulkan \
+    --disable-accelerated-video-decode "$@"
+fi
+exec "$B" --ozone-platform=wayland "$@"

@@ -19,6 +19,8 @@ struct ReadyView: View {
     @State private var sheet: ReadySheet?
     /// The VM to delete runs (or omacvm works on it): asked once, when the sheet opens.
     @State private var deleteBusy = false
+    @State private var managedRunning = true
+    @State private var gesturesPermissions = false
 
     enum ReadySheet: Identifiable {
         case delete(VMConfig), whatsNew
@@ -30,7 +32,8 @@ struct ReadyView: View {
         }
     }
 
-    private var running: Bool { preview?.running ?? state.vmRunning() }
+    private var managed: Bool { Product.isUbuntu && DeveloperActions.name(state.config) != nil }
+    private var running: Bool { preview?.running ?? (managed ? managedRunning : state.vmRunning()) }
     /// A move to Omarchy 4.5 that is not over: Start and Update VM wait for Resume or Undo.
     private var moveOpen: Bool {
         if let m = preview?.move {
@@ -51,7 +54,9 @@ struct ReadyView: View {
         } notices: {
             UpdateBanner(updater: updater, running: running) { sheet = .whatsNew }
             // One blue banner at a time: the app's update first, the move's offer quiet meanwhile.
-            OmarchyMoveCard(state: state, running: running, preview: preview?.move, quiet: UpdateBanner.shows(updater))
+            if !Product.isUbuntu {
+                OmarchyMoveCard(state: state, running: running, preview: preview?.move, quiet: UpdateBanner.shows(updater))
+            }
             notices
         } content: {
             SettingsSections(state: state, preview: preview, running: running) { vm in
@@ -72,6 +77,7 @@ struct ReadyView: View {
                 WhatsNewSheet(updater: updater, running: running) { sheet = nil }
             }
         }
+        .sheet(isPresented: $gesturesPermissions) { UbuntuGesturesPermissions() }
         .onAppear { if let s = preview?.sheet { sheet = s } }
         // `omacvm`, the control centre or another window may have changed a
         // setting meanwhile: read them again (every row follows state.tick).
@@ -82,8 +88,14 @@ struct ReadyView: View {
         }
         .onAppear { if preview == nil { state.refreshMacSetup() } }
         .onChange(of: state.config.folder) { _, _ in if preview == nil { state.refreshMacSetup() } }
-        .task {
+        .task(id: state.config.folder) {
             while !Task.isCancelled && preview == nil {
+                if managed {
+                    let folder = state.config.folder
+                    let busy = await Task.detached { !Storage.busyFolders([folder]).isEmpty }.value
+                    if Task.isCancelled { return }
+                    managedRunning = busy
+                }
                 try? await Task.sleep(for: .seconds(3))
                 // Only while the window shows (not while a VM runs and it is put away).
                 if NSApp.windows.contains(where: { $0.isVisible && $0.contentViewController is NSHostingController<RootView> }) {
@@ -103,11 +115,12 @@ struct ReadyView: View {
                      factsInfo: factsInfo) {
             AppIconButton()
         } trailing: {
+            if Product.isUbuntu { Button("Home") { state.showHome = true } }
             let app = preview?.appVersion ?? OmacVMVersion.app
             let behind = app.map { OmacVMVersion.vmIsBehind(state.config.guestVersion, app: $0) } ?? false
             // Also when this Mac's helpers are not set up for the VM (a VM
             // copied at the same version had no Update VM anywhere).
-            if behind || macSetup?.wantsUpdateVM == true {
+            if !managed && (Product.isUbuntu || behind || macSetup?.wantsUpdateVM == true) {
                 Button {
                     state.updateVM()
                 } label: {
@@ -116,14 +129,27 @@ struct ReadyView: View {
                         Text("Update VM")
                     }
                 }
-                .help(behind
-                      ? "OmacVM in this VM is \(state.config.guestVersion.map { "\($0)" } ?? "from an older app"); this app has \(app ?? ""). Update VM starts the VM without a window, updates OmacVM in it and its helpers on the Mac (a few minutes) and shuts it down. Your files and settings in Omarchy stay."
-                      : "\(macSetup?.title(vm: state.config.name) ?? ""). Update VM starts the VM without a window, sets up its helpers on this Mac and gives the VM this Mac's token (a few minutes), then shuts it down. Your files and settings in Omarchy stay.")
+                .help(Product.isUbuntu
+                      ? "Start Ubuntu without a window, update its guest integrations from this app, and shut it down. Your files and Ubuntu settings stay."
+                      : behind
+                      ? "OmacVM in this VM is \(state.config.guestVersion.map { "\($0)" } ?? "from an older app"); this app has \(app ?? ""). Update VM starts the VM without a window, updates OmacVM in it and its helpers on the Mac (a few minutes) and shuts it down. Your files and settings in \(Product.guestName) stay."
+                      : "\(macSetup?.title(vm: state.config.name) ?? ""). Update VM starts the VM without a window, sets up its helpers on this Mac and gives the VM this Mac's token (a few minutes), then shuts it down. Your files and settings in \(Product.guestName) stay.")
                 .disabled(state.storage.moving != nil || state.config.filesProblem != nil || running || moveOpen)
                 .layoutProbe("update-vm")
             }
-            Button(running ? "Show" : "Start") {
-                if running { state.showVM() } else { state.startVM() }
+            Button(managed ? (running ? "Open Desktop…" : "Start Desktop") : (running ? "Show" : "Start")) {
+                if managed {
+                    if UbuntuNetworking.showDesktop(state.config) { return }
+                    if running {
+                        let alert = NSAlert()
+                        alert.messageText = "Restart \(state.config.name) to open its desktop?"
+                        alert.informativeText = "This stops running Linux commands and servers. Save your work first."
+                        alert.addButton(withTitle: "Restart for Desktop")
+                        alert.addButton(withTitle: "Cancel").keyEquivalent = "\r"
+                        guard alert.runModal() == .alertFirstButtonReturn else { return }
+                    }
+                    state.startVM()
+                } else if running { state.showVM() } else { state.startVM() }
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
@@ -157,9 +183,11 @@ struct ReadyView: View {
         // Mac, a helper not allowed): said here as long as it is so, with
         // what fixes it. Later in the question before a start does not hide it.
         if let s = macSetup, s.needsAction, state.config.filesProblem == nil {
-            NoticeStrip(text: s.notice(vm: state.config.name), info: s.info(vm: state.config.name), action: s.button,
+            NoticeStrip(text: MacSetup.displayName(s.notice(vm: state.config.name)), info: MacSetup.displayName(s.info(vm: state.config.name)), action: s.button,
                         disabled: s.fix == .updateVM && (running || state.storage.moving != nil)) {
-                state.fixMacSetup(s)
+                if Product.isUbuntu && s.fix == .settings && s.helpers.contains("OmacVM Gestures") {
+                    gesturesPermissions = true
+                } else { state.fixMacSetup(s) }
             }
         }
     }
@@ -185,30 +213,44 @@ struct SettingsSections: View {
             Card {
                 ResourcesRow(state: state)
                 GraphicsRow(state: state)
-                GPUComputeRow(state: state)
+                if Product.isUbuntu {
+                    SettingRow(title: "WebGPU and OpenCL", subtitle: "Use the WebGPU browser for compute and the Video browser for hardware decoding. Requires Vulkan graphics.", probe: "ubuntu-compute")
+                } else {
+                    GPUComputeRow(state: state)
+                }
                 GPUOffMainLoopRow(tick: state.tick)
                 VKWindowsNoCopyRow(tick: state.tick)
-                GhosttyGPURow(tick: state.tick, folder: state.config.folder, running: running)
+                if !Product.isUbuntu { GhosttyGPURow(tick: state.tick, folder: state.config.folder, running: running) }
                 CloseActionRow(tick: state.tick)
             }
         }
         .spySection("general")
+        if Product.isUbuntu {
+            VStack(alignment: .leading, spacing: 0) {
+                SectionTitle(text: "Developer & SSH")
+                Card { DeveloperRow(state: state) }
+            }.spySection("developer")
+        }
         VStack(alignment: .leading, spacing: 0) {
             SectionTitle(text: "Display")
             Card {
                 StartInRow(state: state, previewNotch: preview?.notch, previewMenuBar: preview?.menuBar)
-                if preview?.notch ?? Mac.hasNotch {
+                if !Product.isUbuntu && (preview?.notch ?? Mac.hasNotch) {
                     NotchSkipRow(state: state, previewInfo: preview?.notchSkipInfo ?? false)
                 }
                 KeepDockAwayRow(tick: state.tick)
-                if preview?.hdr ?? Mac.hasHDRDisplay {
+                if !Product.isUbuntu && (preview?.hdr ?? Mac.hasHDRDisplay) {
                     HDRRow(tick: state.tick, folder: state.config.folder, running: running)
                 }
                 if preview?.extraBrightness ?? Mac.hasExtraBrightnessDisplay {
                     ExtraBrightnessRow(tick: state.tick)
                 }
-                PauseWhileHiddenRow(tick: state.tick)
-                PointerPlaneRow(tick: state.tick)
+                if !Product.isUbuntu { PauseWhileHiddenRow(tick: state.tick) }
+                if Product.isUbuntu {
+                    NativePointerRow(tick: state.tick)
+                } else {
+                    PointerPlaneRow(tick: state.tick)
+                }
                 PresentTilesRow(tick: state.tick)
                 EscapeRow(tick: state.tick)
                 if preview?.magicMouse ?? mouse.connected {
@@ -221,8 +263,16 @@ struct SettingsSections: View {
             SectionTitle(text: "Input")
             Card {
                 KeyboardRow(state: state, preview: preview?.keyNote)
-                MacIMERow(state: state)
-                SwipeOutRow(tick: state.tick, gesturesOff: VMRecord.isOff("gestures", folder: state.config.folder))
+                if Product.isUbuntu {
+                    SettingRow(title: "Input methods", subtitle: "Configure languages and input sources in Ubuntu Settings → Keyboard.", probe: "ubuntu-input")
+                    UbuntuFeatureRow(state: state, feature: "gestures", title: "Trackpad gestures",
+                                     detail: "Three-finger swipes in full screen use GNOME workspaces and Overview. Installs the Mac gestures helper; macOS will ask for Accessibility and Input Monitoring.")
+                } else {
+                    MacIMERow(state: state)
+                }
+                if !Product.isUbuntu {
+                    SwipeOutRow(tick: state.tick, gesturesOff: VMRecord.isOff("gestures", folder: state.config.folder))
+                }
                 ShareKeyboardRow(tick: state.tick)
             }
         }
@@ -239,9 +289,12 @@ struct SettingsSections: View {
             SectionTitle(text: "Sharing & Devices")
             Card {
                 MacFolderRow(state: state)
-                DragDropRow(state: state)
+                if Product.isUbuntu {
+                    UbuntuFeatureRow(state: state, feature: "drag-drop", title: "Finder drops",
+                                     detail: "Drop files onto the VM window to copy them into Ubuntu's Downloads folder. Existing files are kept.")
+                } else { DragDropRow(state: state) }
                 USBRow(state: state)
-                FastNetworkRow(state: state)
+                if DeveloperActions.name(state.config) == nil { FastNetworkRow(state: state) }
             }
         }
         .spySection("sharing")
@@ -251,9 +304,15 @@ struct SettingsSections: View {
                 DiskRow(state: state, preview: preview?.disk)
                 StorageRows(storage: state.storage, selected: state.config.location == nil ? nil : state.config.folder,
                             open: { state.openExisting() }, delete: delete)
-                MoveBackupRow(state: state, running: running, preview: preview?.moveBackup)
-                CommandLineRow(preview: preview?.terminal)
-                UpdateRow(updater: Updater.shared, running: running)
+                if !Product.isUbuntu { MoveBackupRow(state: state, running: running, preview: preview?.moveBackup) }
+                if !Product.isUbuntu { CommandLineRow(preview: preview?.terminal) }
+                if Product.isUbuntu {
+                    SettingRow(title: "App updates", subtitle: "UbuntuVM updates are installed from this project's releases.", probe: "ubuntu-updates") {
+                        Link("UbuntuVM source", destination: URL(string: "https://github.com/akhatr19/ubuntu-omacvm")!)
+                    }
+                } else {
+                    UpdateRow(updater: Updater.shared, running: running)
+                }
             }
             ForEach(state.storage.disconnected, id: \.self) { line in
                 Text(line).font(.subheadline).foregroundStyle(Look.red).padding(.top, 8).padding(.horizontal, 4)

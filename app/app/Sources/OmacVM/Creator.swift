@@ -128,7 +128,7 @@ final class Creator: ObservableObject {
     enum Job { case build, update, move }
     @Published private(set) var job = Job.build
 
-    func start(config: VMConfig, password: String, prebuilt: Bool = false, graphics: GraphicsChoice = .auto) {
+    func start(config: VMConfig, password: String, prebuilt: Bool = false, graphics: GraphicsChoice = .auto, ubuntuISO: URL? = nil) {
         reset(.build, folder: config.folder, route: prebuilt ? .prebuilt : .build)
         do {
             try config.write()
@@ -138,20 +138,28 @@ final class Creator: ObservableObject {
             failed = "Could not write the VM settings: \(error.localizedDescription)"
             return
         }
-        launch(script: prebuilt ? "prebuilt-vm.sh" : "create-vm.sh", folder: config.folder,
-               log: "create.log", input: password + "\n")
+        if Product.isUbuntu {
+            guard let ubuntuISO else { failed = "Choose the Ubuntu Desktop ARM64 ISO first."; return }
+            try? "ubuntu\n".write(to: config.folder.appendingPathComponent("guest-os"), atomically: true, encoding: .utf8)
+            launch(script: "create-ubuntu-vm.sh", folder: config.folder, log: "create.log",
+                   input: password + "\n", args: [ubuntuISO.path])
+        } else {
+            launch(script: prebuilt ? "prebuilt-vm.sh" : "create-vm.sh", folder: config.folder,
+                   log: "create.log", input: password + "\n")
+        }
     }
 
     /// An existing VM (made by an older app): started without a window,
     /// OmacVM applied as at the end of a build, shut down. The VM's
     /// settings stay as they are.
-    func update(config: VMConfig) {
+    func update(config: VMConfig, features: [String] = []) {
         reset(.update, folder: config.folder, route: .build)
         updating = config
         // A VM from a bigger Mac runs at this Mac's Best tier (vm-common.sh vm_load).
         let fit = config.forThisMac
         let size = fit == config ? [:] : ["OMACVM_START_CPUS": "\(fit.cpus)", "OMACVM_START_MEM_MB": "\(fit.memoryMB)"]
-        launch(script: "update-vm.sh", folder: config.folder, log: "update.log", input: nil, env: size)
+        launch(script: "update-vm.sh", folder: config.folder, log: "update.log", input: nil, env: size,
+               args: features.flatMap { ["--feature", $0] })
     }
 
     /// Move to Omarchy 4.5 (move-vm.sh run): a new move or the resume of a

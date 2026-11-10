@@ -10,9 +10,12 @@
 # docs/experiments/scroll-analysis).
 set -euo pipefail
 cd "$(dirname "$0")"
-ARGS=""; APP=build/OmacVMGestures.app; PRE=0; SAID=""
+ARGS=""; APP=build/OmacVMGestures.app; PRE=0; SAID=""; APP_NAME=OmacVMGestures.app
 while (( $# )); do
   case $1 in
+    --app-name)
+      [[ ${2:-} == UbuntuVMGestures.app ]] || { echo 'unsupported helper app name' >&2; exit 2; }
+      APP_NAME=$2; shift 2; continue ;;
     --prebuilt) APP=${2:?--prebuilt APP}; PRE=1; shift 2; continue ;;
     --keys-only|-v|--record) ARGS+="<string>$1</string>"; SAID+="${SAID:+ }$1" ;;
     *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
@@ -25,16 +28,27 @@ LABEL=$(omacvm_label gestures)
 PL=~/Library/LaunchAgents/$LABEL.plist
 launchctl bootout gui/$(id -u)/$LABEL 2>/dev/null || true
 mkdir -p "$HOME/Applications" "$HOME/Library/LaunchAgents"
-rm -rf "$HOME/Applications/OmacVMGestures.app"
-ditto "$APP" "$HOME/Applications/OmacVMGestures.app"
+rm -rf "$HOME/Applications/$APP_NAME"
+ditto "$APP" "$HOME/Applications/$APP_NAME"
+if [[ $APP_NAME == UbuntuVMGestures.app && -d $HOME/Applications/OmacVMGestures.app &&
+      $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$HOME/Applications/OmacVMGestures.app/Contents/Info.plist" 2>/dev/null) == "$LABEL" ]]; then
+  rm -rf "$HOME/Applications/OmacVMGestures.app"
+fi
 # The app it came from was already let in; launchd does not ask again.
-xattr -dr com.apple.quarantine "$HOME/Applications/OmacVMGestures.app" 2>/dev/null || true
+xattr -dr com.apple.quarantine "$HOME/Applications/$APP_NAME" 2>/dev/null || true
+if [[ $APP_NAME == UbuntuVMGestures.app ]]; then
+  register=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+  if [[ -x $register ]]; then
+    "$register" -u "$HOME/Applications/OmacVMGestures.app" >/dev/null 2>&1 || true
+    "$register" -f "$HOME/Applications/$APP_NAME" >/dev/null 2>&1 || true
+  fi
+fi
 cat > "$PL" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key><array><string>$HOME/Applications/OmacVMGestures.app/Contents/MacOS/omacvm-gestures</string>$ARGS</array>
+  <key>ProgramArguments</key><array><string>$HOME/Applications/$APP_NAME/Contents/MacOS/omacvm-gestures</string>$ARGS</array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Interactive</string>

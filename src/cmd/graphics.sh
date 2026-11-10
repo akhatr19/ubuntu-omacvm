@@ -58,7 +58,7 @@ if [[ -n $SET ]] && graphics_fallback "$d" >/dev/null; then
 fi
 # A running VM that gets Vulkan builds its Venus driver now (also when the
 # setting stays: the control centre's repair).
-if [[ -n $SET && $(graphics_wants "$d") == vulkan ]] && { $CHANGED || [[ ! -e $d/venus-ready ]]; }; then
+if [[ -n $SET && $(graphics_wants "$d") == vulkan && $(cat "$d/guest-os" 2>/dev/null) != ubuntu ]] && { $CHANGED || [[ ! -e $d/venus-ready ]]; }; then
   if ip=$(app_ip "$VM"); then
     vm_pin "$VM" app
     if (( ! JSON )); then log "the VM's Vulkan driver (the first time a few minutes)"; fi
