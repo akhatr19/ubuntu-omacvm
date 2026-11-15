@@ -32,7 +32,7 @@ def app_bundle():
         app = ROOT.parents[2]
     else:
         choices = [Path.home() / 'Applications/UbuntuVM.app', Path('/Applications/UbuntuVM.app'),
-                   ROOT / 'app/dist/UbuntuVM.app']
+                   ROOT / 'app/dist/UbuntuVM.app', ROOT / 'app/dist/UbuntuVM Installer.app']
         app = next((p for p in choices if p.is_dir()), None)
     if not app or not (app / 'Contents/Resources/runtime/bin/OmacVM').is_file():
         raise ValueError('UbuntuVM.app is required; build or install it first')

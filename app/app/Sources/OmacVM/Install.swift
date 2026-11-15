@@ -4,14 +4,18 @@ import SwiftUI
 /// First start from a download or build folder: the app installs itself under
 /// the name the user picks (OmacVM, Omarchy or their own) and opens from there.
 enum Installer {
+    static var isInstaller: Bool { Bundle.main.object(forInfoDictionaryKey: "UbuntuVMInstaller") as? Bool == true }
+    static var appBundleID: String {
+        Bundle.main.object(forInfoDictionaryKey: "UbuntuVMAppBundleIdentifier") as? String ?? Bundle.main.bundleIdentifier ?? "org.omacvm.app"
+    }
     static var memory: InstallMemory {
         let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
-        return InstallMemory(defaults: .standard, bundleID: Bundle.main.bundleIdentifier ?? "org.omacvm.app",
+        return InstallMemory(defaults: isInstaller ? (UserDefaults(suiteName: appBundleID) ?? .standard) : .standard, bundleID: appBundleID,
                              appFolders: [home, URL(fileURLWithPath: "/Applications")])
     }
 
     static var isInstalled: Bool {
-        memory.isInstalled(thisCopy, allowSkipped: !Product.isUbuntu) || (!Product.isUbuntu && ProcessInfo.processInfo.environment["OMACVM_RESOURCES"] != nil)
+        !isInstaller && (memory.isInstalled(thisCopy, allowSkipped: !Product.isUbuntu) || (!Product.isUbuntu && ProcessInfo.processInfo.environment["OMACVM_RESOURCES"] != nil))
     }
 
     /// Where this copy is, as the user sees it. A download that macOS runs
@@ -40,7 +44,7 @@ enum Installer {
     static func registerInstalledCopy(_ app: URL, previous: URL?) {
         let tool = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
         guard Product.isUbuntu, FileManager.default.isExecutableFile(atPath: tool) else { return }
-        let obsolete = [thisCopy.path] + (previous.map { [$0.path] } ?? [])
+        let obsolete = (isInstaller ? [] : [thisCopy.path]) + (previous.map { [$0.path] } ?? [])
         for arguments in obsolete.map({ ["-u", $0] }) + [["-f", app.path]] {
             let process = Process(); process.executableURL = URL(fileURLWithPath: tool); process.arguments = arguments
             process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
@@ -90,7 +94,7 @@ enum Installer {
         }
         if fm.fileExists(atPath: target.path) {
             if Product.isUbuntu {
-                guard InstallMemory.bundleID(of: target) == Bundle.main.bundleIdentifier else {
+                guard InstallMemory.bundleID(of: target) == appBundleID else {
                     throw HelperError.io("A different app already exists at \(target.path). Choose another location.")
                 }
                 guard InstallMemory.isNewer(thisCopy, than: target) else {
@@ -105,7 +109,7 @@ enum Installer {
         let staged = folder.appendingPathComponent(".\(UUID().uuidString).app")
         defer { try? fm.removeItem(at: staged) }
         try fm.copyItem(at: Bundle.main.bundleURL, to: staged)
-        if name != Product.name { try rename(staged, to: name) }
+        if name != Product.name || isInstaller { try rename(staged, to: name) }
         let backup = folder.appendingPathComponent(".\(UUID().uuidString).app")
         let replacing = fm.fileExists(atPath: target.path)
         if replacing { try fm.moveItem(at: target, to: backup) }
@@ -127,11 +131,16 @@ enum Installer {
         }
         info["CFBundleName"] = name
         info["CFBundleDisplayName"] = name
+        if Product.isUbuntu {
+            info["CFBundleIdentifier"] = appBundleID
+            info.removeValue(forKey: "UbuntuVMInstaller")
+            info.removeValue(forKey: "UbuntuVMAppBundleIdentifier")
+        }
         let out = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
         try out.write(to: plist)
         let sign = Process()
         sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        let id = Bundle.main.bundleIdentifier ?? "org.omacvm.app"
+        let id = appBundleID
         sign.arguments = ["--force", "--sign", "-", "--identifier", id,
                           "-r=designated => identifier \"\(id)\"", target.path]
         sign.standardOutput = FileHandle.nullDevice
@@ -150,6 +159,7 @@ struct InstallView: View {
     @State private var folder: URL
     @State private var error: String?
     @State private var removePrevious = true
+    @State private var installations: [URL]
 
     /// Starts on the name and folder of the copy installed before, so a new
     /// version replaces it in place; the first install on OmacVM in the
@@ -158,7 +168,9 @@ struct InstallView: View {
          onDone: @escaping () -> Void) {
         self.onDone = onDone
         self.memory = memory
-        let pick = memory.preselection(for: Installer.thisCopy, name: Product.name, folder: firstFolder)
+        _removePrevious = State(initialValue: !Product.isUbuntu)
+        _installations = State(initialValue: memory.installations(excluding: Installer.thisCopy))
+        let pick = memory.preselection(for: Installer.thisCopy, name: Product.isUbuntu ? "UbuntuVM" : Product.name, folder: firstFolder)
         let preset = [Product.isUbuntu ? "UbuntuVM" : "OmacVM", Product.guestName].firstIndex(of: pick.name)
         _choice = State(initialValue: preset ?? 2)
         _custom = State(initialValue: preset == nil ? pick.name : "")
@@ -175,7 +187,7 @@ struct InstallView: View {
 
     var body: some View {
         WindowShell {
-            WindowHeader(title: "\(updating ? "Update" : "Install") \(Product.name)", facts: Product.isUbuntu ? "\(Product.buildLabel). Your Ubuntu VMs and files stay where they are." : "Its name shows in the Dock and the menu bar while \(Product.guestName) runs.") {
+            WindowHeader(title: Product.isUbuntu ? "UbuntuVM Installer" : "Install \(Product.name)", facts: Product.isUbuntu ? "\(Product.buildLabel). Your Ubuntu VMs and files stay where they are." : "Its name shows in the Dock and the menu bar while \(Product.guestName) runs.") {
                 AppIconButton()
             } trailing: {
                 if !Product.isUbuntu {
@@ -196,14 +208,26 @@ struct InstallView: View {
         } notices: {
             if let error { MessageStrip(text: error, error: true) }
         } content: {
-            if Product.isUbuntu, let previous = memory.previousInstall(excluding: Installer.thisCopy) {
-                SectionTitle(text: "Installed app", first: true)
+            if Product.isUbuntu {
+                SectionTitle(text: "Existing installations (\(installations.count))", first: true)
                 Card {
-                    SettingRow(title: InstallMemory.displayVersion(of: previous), subtitle: previous.path, probe: "install-existing") {
-                        Text(InstallMemory.isNewer(Installer.thisCopy, than: previous) ? "Update available"
-                             : (InstallMemory.isNewer(previous, than: Installer.thisCopy) ? "Installed build is newer" : "Already up to date"))
-                            .font(.subheadline).foregroundStyle(.secondary)
+                    if installations.isEmpty {
+                        Text("No installed UbuntuVM apps found in /Applications, ~/Applications or the last installation location.")
+                            .foregroundStyle(.secondary).padding(12)
                     }
+                    ForEach(installations, id: \.path) { app in
+                        SettingRow(title: app.deletingPathExtension().lastPathComponent + " — " + InstallMemory.displayVersion(of: app), subtitle: app.path) {
+                            Text(InstallMemory.isNewer(Installer.thisCopy, than: app) ? "Update available"
+                                 : (InstallMemory.isNewer(app, than: Installer.thisCopy) ? "Newer than installer" : "Up to date"))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Button("Open") { open(app) }
+                            Button("Choose for Update") {
+                                custom = app.deletingPathExtension().lastPathComponent; choice = 2
+                                folder = app.deletingLastPathComponent()
+                            }.disabled(!InstallMemory.isNewer(Installer.thisCopy, than: app))
+                        }
+                    }
+                    Button("Scan Again") { installations = memory.installations(excluding: Installer.thisCopy) }.padding(10)
                 }
             }
             SectionTitle(text: "Install", first: !Product.isUbuntu || memory.previousInstall(excluding: Installer.thisCopy) == nil)
@@ -246,8 +270,9 @@ struct InstallView: View {
 
     private var canInstall: Bool {
         guard !Installer.isSelf(name: name, in: folder) else { return false }
-        if let previous = memory.previousInstall(excluding: Installer.thisCopy),
-           !InstallMemory.isNewer(Installer.thisCopy, than: previous) { return false }
+        let target = folder.appendingPathComponent("\(name).app")
+        if FileManager.default.fileExists(atPath: target.path),
+           !InstallMemory.isNewer(Installer.thisCopy, than: target) { return false }
         return true
     }
 

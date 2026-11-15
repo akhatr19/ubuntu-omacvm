@@ -154,6 +154,15 @@ expect("dev numbering supersedes upstream version", InstallMemory.isNewer(oldDev
 expect("legacy version cannot downgrade dev build", !InstallMemory.isNewer(legacy, than: oldDev))
 expect("dist copy is only an installer", !ubuntu.isInstalled(incoming, allowSkipped: false))
 
+expect("scan lists all installs once despite remembered path", ubuntu.installations(excluding: incoming).count == 2)
+expect("scan sorts newest first", ubuntu.installations(excluding: incoming).map(InstallMemory.path) == [newDev, oldDev].map(InstallMemory.path))
+let installer = makeApp(sysApps, "UbuntuVM Installer", id: "org.omacvm.ubuntu.installer", version: "0.1")
+expect("installer identity is excluded from app scan", !ubuntu.installations(excluding: incoming).contains(installer))
+var roleInfo: [String: Any] = ["CFBundleIdentifier": "org.omacvm.ubuntu", "UbuntuVMInstaller": true]
+let marked = makeApp(userApps, "Marked Installer", id: "org.omacvm.ubuntu", version: "0.1")
+try! PropertyListSerialization.data(fromPropertyList: roleInfo, format: .xml, options: 0).write(to: marked.appendingPathComponent("Contents/Info.plist"))
+expect("installer role is excluded even with app identity", !ubuntu.installations(excluding: incoming).contains(marked))
+
 defaults.removePersistentDomain(forName: suite)
 print(failed == 0 ? "all install-defaults checks passed" : "\(failed) install-defaults check(s) failed")
 exit(failed == 0 ? 0 : 1)

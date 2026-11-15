@@ -59,7 +59,7 @@ struct InstallMemory {
     /// The copy installed before, which a new version replaces by default:
     /// the one the dialog installed last if it is still there, else an app
     /// with this bundle id in the Applications folders. Never ME.
-    func previousInstall(excluding me: URL) -> URL? {
+    func installations(excluding me: URL) -> [URL] {
         let mine = Self.path(me)
         var candidates: [URL] = []
         if let last = defaults.string(forKey: Self.installedKey) {
@@ -70,11 +70,19 @@ struct InstallMemory {
             candidates += items.filter { $0.pathExtension == "app" }
                 .sorted { $0.lastPathComponent < $1.lastPathComponent }
         }
-        candidates = candidates.filter { Self.path($0) != mine && Self.bundleID(of: $0) == bundleID }
+        var seen = Set<String>()
+        candidates = candidates.filter {
+            Self.path($0) != mine && Self.bundleID(of: $0) == bundleID &&
+            Self.info(of: $0)?["UbuntuVMInstaller"] as? Bool != true && seen.insert(Self.path($0)).inserted
+        }
         if bundleID.hasPrefix("org.omacvm.ubuntu") {
             candidates.sort { Self.isNewer($0, than: $1) }
         }
-        return candidates.first
+        return candidates
+    }
+
+    func previousInstall(excluding me: URL) -> URL? {
+        installations(excluding: me).first
     }
 
     /// What the dialog shows first: the name and folder of the copy installed

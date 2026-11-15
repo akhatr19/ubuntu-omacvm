@@ -268,13 +268,19 @@ enum RenderVMWindow {
             let apps = tmp.appendingPathComponent("Applications")
             let app = apps.appendingPathComponent("UbuntuVM.app/Contents")
             try? FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
-            let info: [String: String] = ["CFBundleIdentifier": Bundle.main.bundleIdentifier ?? "",
+            let info: [String: String] = ["CFBundleIdentifier": Installer.appBundleID,
                                          "CFBundleShortVersionString": "3.4.1"]
             try? PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
                 .write(to: app.appendingPathComponent("Info.plist"))
             let suite = tmp.appendingPathComponent("install-defaults").path
             let defaults = UserDefaults(suiteName: suite)!
-            let memory = InstallMemory(defaults: defaults, bundleID: Bundle.main.bundleIdentifier ?? "", appFolders: [apps])
+            let other = apps.appendingPathComponent("UbuntuVM Previous.app/Contents")
+            try? FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+            let older: [String: Any] = ["CFBundleIdentifier": Installer.appBundleID,
+                "CFBundleShortVersionString": "0.1", "CFBundleVersion": "6", "UbuntuVMDevBuild": true]
+            try? PropertyListSerialization.data(fromPropertyList: older, format: .xml, options: 0)
+                .write(to: other.appendingPathComponent("Info.plist"))
+            let memory = InstallMemory(defaults: defaults, bundleID: Installer.appBundleID, appFolders: [apps])
             picture("screen-4-update", into: dirURL) { InstallView(memory: memory) {} }
             sides("screen-4-update", height: smallHeight)
             defaults.removePersistentDomain(forName: suite)

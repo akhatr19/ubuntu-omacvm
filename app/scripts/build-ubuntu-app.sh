@@ -38,7 +38,7 @@ counter.write_text(str(number) + '\n')
 print(number)
 PYBUILD
 )
-APP=$T/UbuntuVM.app
+APP="$T/UbuntuVM Installer.app"
 C=$APP/Contents
 ditto "$BASE" "$APP"
 cp "$BIN/OmacVM" "$C/MacOS/OmacVM"
@@ -52,12 +52,14 @@ ID=${OMACVM_UBUNTU_BUNDLE_ID:-org.omacvm.ubuntu}
 /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.1' "$C/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$C/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :UbuntuVMDevBuild bool true' "$C/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $ID" "$C/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleName UbuntuVM' "$C/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName UbuntuVM' "$C/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $ID.installer" "$C/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleName UbuntuVM Installer' "$C/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName UbuntuVM Installer' "$C/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :NSLocalNetworkUsageDescription UbuntuVM connects Ubuntu to the network. Optional LAN SSH and port forwards let other devices reach the services you publish." "$C/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :NSBluetoothAlwaysUsageDescription UbuntuVM optional integrations access Bluetooth only when you enable them." "$C/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :OmacVMCommit $COMMIT" "$C/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :UbuntuVMInstaller bool true' "$C/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :UbuntuVMAppBundleIdentifier string $ID" "$C/Info.plist"
 mkdir "$T/UbuntuVM.iconset"
 for n in 16 32 128 256 512; do
   sips -s format png -z "$n" "$n" "$R/app/app/UbuntuVM.svg" --out "$T/UbuntuVM.iconset/icon_${n}x${n}.png" >/dev/null
@@ -71,6 +73,9 @@ HELPER=$C/Helpers/OmacVMGestures.app
 cp "$C/Resources/OmacVM.icns" "$HELPER/Contents/Resources/OmacVM.icns"
 "$R/src/lib/sign.sh" "$HELPER" org.omacvm.gestures
 "$R/app/scripts/sign-app.sh" "$APP" "$ID"
+# Keep nested runtime identities stable; only the outer launcher is the installer.
+codesign --force --sign - --identifier "$ID.installer" -r="designated => identifier \"$ID.installer\"" "$APP"
+codesign --verify --deep --strict "$APP"
 mkdir -p "$(dirname "$OUT")"
 mv "$APP" "$OUT"
 echo "Built UbuntuVM 0.1 Dev Build #$BUILD at $OUT"
