@@ -12,6 +12,7 @@ struct UbuntuHomeFoldersView: View {
     @State private var folders: [String] = []
     @State private var name = ""
     @State private var problem: String?
+    @State private var status: String?
 
     var body: some View {
         GroupBox("Shared home folders") {
@@ -41,12 +42,20 @@ struct UbuntuHomeFoldersView: View {
                 Text("Changes are live while VMs run. Some apps need polling to notice external edits. File locks are not coordinated across systems; keep databases and apps requiring shared locks on a VM’s private disk.")
                     .font(.caption).foregroundStyle(.secondary)
                 if running { Text("Stop this VM to change folder mappings or turn sharing off.").font(.caption).foregroundStyle(.secondary) }
+                if running && enabled, let status { Text(status).font(.caption).foregroundStyle(status.contains("failed:") ? .red : .secondary) }
                 if personalDisk { Text("This VM uses an existing personal disk. Detach it in Advanced before enabling Mac-backed home folders; its files are preserved.").font(.caption).foregroundStyle(.orange) }
                 if let problem { Text(problem).foregroundStyle(.red).textSelection(.enabled) }
                 if job.busy { ProgressView("Updating shared home folders…") }
             }.padding(6).disabled(job.busy)
         }
         .onAppear { action("list") }
+        .task(id: running) {
+            guard running else { return }
+            while !Task.isCancelled {
+                status = UbuntuHomeFolders.message(config)
+                do { try await Task.sleep(for: .seconds(2)) } catch { break }
+            }
+        }
         .onChange(of: job.busy) { _, value in onBusy(value) }
     }
 

@@ -332,7 +332,10 @@ data, stays on that VM's disk. Add a simple folder name such as `Developer`
 to share `~/Linux/Developer` at `~/Developer` in each distro.
 
 The folder list is Mac-wide; the enable switch is per VM. Changes apply after
-restart. New VMs default to sharing; existing raw personal-disk attachments
+restart. Existing desktop VMs receive the boot helper through the app's held
+guest-agent connection; recreating a VM is unnecessary. Files shows the current
+startup's setup progress or failure separately from the enable switch.
+New VMs default to sharing; existing raw personal-disk attachments
 keep their previous behavior until detached. At startup the app creates only
 the configured Mac folders and exports each separately through virtio-9p.
 No storage VM, network service, Finder password or synchronization copy is

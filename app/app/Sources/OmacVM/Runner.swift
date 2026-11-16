@@ -775,8 +775,7 @@ final class Runner {
         qemuRuns = true
         process = p
         if Product.isUbuntu {
-            do { try UbuntuHomeFolders.install(c) }
-            catch { appendLog("Home folders: " + error.localizedDescription) }
+            UbuntuHomeFolders.status(c, pid: p.processIdentifier, message: "Waiting for the VM to connect shared home folders…")
             do { try UbuntuSharedFolders.watch(c, pid: p.processIdentifier) }
             catch { appendLog("Shared folders: " + error.localizedDescription) }
         }
@@ -837,6 +836,10 @@ final class Runner {
             let r = VMKey.ensure(folder: folder, agentPath: agentPath, pingWait: agentDeadline.timeIntervalSinceNow,
                                  running: { kill(pid, 0) == 0 })
             if let line = SSHRepair.logLine(r, stillRunning: kill(pid, 0) == 0) {
+                Task { @MainActor in self?.appendLog(line) }
+            }
+            if Product.isUbuntu, kill(pid, 0) == 0,
+               let line = UbuntuHomeFolders.install(c, agent: agentPath, pid: pid, until: agentDeadline) {
                 Task { @MainActor in self?.appendLog(line) }
             }
             if Product.isUbuntu, kill(pid, 0) == 0,
