@@ -63,9 +63,10 @@ struct UbuntuDataView: View {
             if let problem { Text(problem).foregroundStyle(.red).textSelection(.enabled) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    UbuntuSharedFoldersView(config: config, running: running) { sharedBusy = $0 }.disabled(personalBusy)
+                    UbuntuHomeFoldersView(config: config, running: running) { sharedBusy = $0 }.disabled(personalBusy)
                     DisclosureGroup("Advanced: disks, file services and sync") {
-                    UbuntuPersonalDataView(config: config, running: running) { personalBusy = $0 }
+                    UbuntuSharedFoldersView(config: config, running: running) { personalBusy = $0 }.disabled(sharedBusy)
+                    UbuntuPersonalDataView(config: config, running: running) { personalBusy = $0 }.disabled(sharedBusy)
                     Group {
                     GroupBox("Linux data in Mac Finder") {
                         VStack(alignment: .leading, spacing: 10) {

@@ -14,6 +14,8 @@ for name in media audio-latency mac-folder; do
   install -m755 "$A/omacvm-$name" /usr/local/bin/
 done
 install -m644 "$A/omacvm-mac-folder.service" /etc/systemd/system/
+install -m755 "$R/ubuntu/guest/home-folders.py" /usr/local/bin/ubuntu-vm-home-folders
+install -m644 "$R/ubuntu/guest/home-folders.service" /etc/systemd/system/ubuntu-vm-home-folders.service
 install -Dm644 "$A/omacvm-clipboard" /usr/local/lib/omacvm/clipboard_protocol.py
 install -m755 "$R/ubuntu/guest/clipboard.py" /usr/local/bin/omacvm-clipboard
 install -m755 "$R/ubuntu/guest/displays.py" /usr/local/bin/omacvm-displays
@@ -41,6 +43,7 @@ Gio.Settings.sync()
 PY
 systemctl daemon-reload
 systemctl enable --now omacvm-mac-folder.service
+systemctl enable --now ubuntu-vm-home-folders.service
 if [[ -d /run/user/$(id -u "$U") ]]; then
   home_run env XDG_RUNTIME_DIR="/run/user/$(id -u "$U")" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u "$U")/bus" \

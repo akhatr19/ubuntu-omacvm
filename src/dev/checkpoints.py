@@ -18,7 +18,7 @@ import runtime as rt
 from supervisor import free_port
 
 RECORD = 'checkpoint-head.json'
-SKIP = {'logs', RECORD, 'workspace-known_hosts', 'developer-network-status', 'update.log', 'data-volume.json', 'data-needs-setup', 'shared-folders.json', 'shared-known_hosts'}
+SKIP = {'logs', RECORD, 'workspace-known_hosts', 'developer-network-status', 'update.log', 'data-volume.json', 'data-needs-setup', 'shared-folders.json', 'shared-known_hosts', 'home-folders-off'}
 
 
 def read_json(path):
@@ -173,7 +173,7 @@ def restore(vm, identity):
             child = temporary / 'vm'
             # Host publication and Mac-folder grants belong to this VM, not
             # another branch's historical Linux state. Never re-enable them on restore.
-            for file in ('developer-network.json', 'mac-folder', 'fast-network', 'mac-setup', 'finder-drive.json', 'data-volume.json', 'shared-folders.json'):
+            for file in ('developer-network.json', 'mac-folder', 'fast-network', 'mac-setup', 'finder-drive.json', 'data-volume.json', 'shared-folders.json', 'home-folders-off'):
                 (child / file).unlink(missing_ok=True)
                 if (vm / file).is_file(): shutil.copyfile(vm / file, child / file)
             if (vm / 'data-volume.json').exists():
@@ -224,7 +224,7 @@ def fork(vm, identity, name):
         text = re.sub(r'^NAME=.*$', "NAME='" + target.name + "'", text, flags=re.M)
         text = re.sub(r'^SSH_PORT=.*$', 'SSH_PORT=' + str(port), text, flags=re.M)
         (child / 'vm.env').write_text(text)
-        for key in ('ssh-key', 'ssh-key.pub', 'known_hosts', 'workspace-known_hosts', 'identity-ready', 'mac-folder', 'mac-setup', 'fast-network', 'finder-drive.json', 'data-volume.json', 'shared-folders.json'):
+        for key in ('ssh-key', 'ssh-key.pub', 'known_hosts', 'workspace-known_hosts', 'identity-ready', 'mac-folder', 'mac-setup', 'fast-network', 'finder-drive.json', 'data-volume.json', 'shared-folders.json', 'home-folders-off'):
             (child / key).unlink(missing_ok=True)
         rt.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'ubuntu-branch', '-f', child / 'ssh-key'])
         settings = network.load(child, {})

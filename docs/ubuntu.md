@@ -27,6 +27,13 @@ existing newer installation is never assigned an older number. Keep that counter
 when cleaning build artifacts. The upstream integration version in `src/VERSION`
 is separate from the Ubuntu app version.
 
+The default shared home folders live in `~/Linux` on the Mac: Desktop,
+Documents and Downloads, plus optional custom folders such as Developer.
+They appear in each distro's home; dotfiles and other app data remain private.
+Workbench → Files configures the shared list and a per-VM off switch.
+See [shared home folders](developer-environments.md#shared-home-folders-the-default-files-workflow)
+for preservation of existing files, snapshot boundaries and watcher limitations.
+
 Open `app/dist/UbuntuVM Installer.app` to install or update. It has a separate name and bundle identity from the installed `UbuntuVM.app`. The installer lists versions and paths found in `/Applications`, `~/Applications` and the last recorded custom installation location, with Open and Update Here actions. A build/download copy only
 shows the installer; it cannot start VMs or hand off silently to an older app.
 The installer searches `/Applications`, `~/Applications`, and the last chosen

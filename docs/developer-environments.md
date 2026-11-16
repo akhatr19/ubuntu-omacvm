@@ -321,9 +321,53 @@ uvm data --vm /path/to/VM detach
 uvm data --vm /path/to/VM restore --id DATA_ID --snapshot-id SNAPSHOT_ID
 ```
 
-### Live shared folders (the default Files workflow)
+### Shared home folders (the default Files workflow)
 
-Workbench → Files presents **Shared folders** first. Create one from a stopped
+Workbench → Files → **Shared home folders** uses ordinary Mac folders as the
+source of truth. By default, `~/Linux/Desktop`, `~/Linux/Documents` and
+`~/Linux/Downloads` appear at `~/Desktop`, `~/Documents` and `~/Downloads` in
+every enabled distro. Your Mac's own Desktop, Documents and Downloads are
+unrelated. The rest of each Linux home, including dotfiles, settings and app
+data, stays on that VM's disk. Add a simple folder name such as `Developer`
+to share `~/Linux/Developer` at `~/Developer` in each distro.
+
+The folder list is Mac-wide; the enable switch is per VM. Changes apply after
+restart. New VMs default to sharing; existing raw personal-disk attachments
+keep their previous behavior until detached. At startup the app creates only
+the configured Mac folders and exports each separately through virtio-9p.
+No storage VM, network service, Finder password or synchronization copy is
+needed. Mac access works with every VM and the app closed. Missing permissions
+or symlinked source folders cause an explicit startup error.
+
+Before mounting, nonempty local Linux folders move into
+`~/UbuntuVM Local Folders/<name>-<id>`. They are not merged into or allowed to
+overwrite the shared files. Move any wanted originals into the shared folders
+yourself. Turning sharing off, or removing a folder mapping, restores its
+original local directory on the next boot. Shared Mac files are retained.
+Legacy Linux-backed shares remain available under Advanced; existing data is
+never automatically converted or deleted.
+
+Multiple VMs and Mac apps can edit the same files while running. The mounts
+disable data/writeback caching to avoid retaining other clients' old contents.
+External changes do not guarantee Linux inotify events: use polling for editors
+or development servers that need it. This is shared storage, so simultaneous
+edits to one document still need coordination. The current 9p backend does not
+coordinate file locks with Mac apps; do not depend on cross-system locking.
+APFS case sensitivity and Mac
+filesystem semantics apply. Keep databases, containers and build caches on
+private Linux storage, and use separate Git worktrees for independent agents.
+VM snapshots exclude these Mac files; back up `~/Linux` on the Mac separately.
+
+```
+uvm home-folders --vm /path/to/VM list
+uvm home-folders --vm /path/to/VM add --name Developer
+uvm home-folders --vm /path/to/VM disable
+uvm home-folders --vm /path/to/VM enable
+```
+
+### Linux-backed live shared folders (Advanced)
+
+Workbench → Files → Advanced also provides **Shared folders**. Create one from a stopped
 VM, or convert an existing personal disk. First setup makes a private copy of
 that VM's system in `.ubuntu-services`, gives it fresh management credentials,
 and prepares a background file service. The original system and local home

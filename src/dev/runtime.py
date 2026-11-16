@@ -326,6 +326,8 @@ def qemu_plan(vm, port, desktop=False):
     args += volumes.arguments(vm)
     import sharing
     args += sharing.arguments(vm)
+    import homefolders
+    args += homefolders.arguments(vm)
     share = vm / 'mac-folder'
     if share.exists():
         text = share.read_text().strip()

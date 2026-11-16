@@ -24,6 +24,12 @@ def parser():
     p.add_argument('-e', '--env', help='managed environment name')
     p.add_argument('-f', '--manifest', type=Path, help='project uvm.json (otherwise search parent folders)')
     sub = p.add_subparsers(dest='command')
+    home = sub.add_parser('home-folders', help='Mac-backed folders in each Linux home')
+    home.add_argument('--vm', type=Path, required=True)
+    home.add_argument('--qga', type=Path)
+    home.add_argument('action', choices=('list', 'enable', 'disable', 'add', 'remove', 'plan', 'prepare', 'install'))
+    home.add_argument('--name')
+    home.add_argument('--output', type=Path)
     shared = sub.add_parser('sharing', help='live shared folders for Finder and multiple VMs')
     shared.add_argument('--vm', type=Path, required=True)
     shared.add_argument('--qga', type=Path)
@@ -222,6 +228,9 @@ def main(argv=None):
         state = rt.ensure_up(vm)
         os.execv('/usr/bin/nc', ['nc', '127.0.0.1', str(state['ssh_port'])])
     args = parser().parse_args(argv)
+    if args.command == 'home-folders':
+        import homefolders
+        return homefolders.main(args)
     if args.command == 'sharing':
         import sharing
         return sharing.main(args)

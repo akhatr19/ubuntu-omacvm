@@ -126,6 +126,8 @@ def supervise(vm, desktop=False):
                 time.sleep(.5)
             else:
                 raise TimeoutError('new environment did not reboot with its unique identity')
+        import homefolders
+        homefolders.install(vm)
         import sharing
         sharing.start_watch(vm, pid=process.pid)
         sharing.wait_ready(vm, process.pid)

@@ -21,6 +21,8 @@ for name in clipboard displays media audio-latency; do
 done
 check "audio latency utility" command -v pactl
 check "shared folder service" systemctl is-enabled --quiet omacvm-mac-folder
+check "Mac-backed home folder service" systemctl is-enabled --quiet ubuntu-vm-home-folders
+check "Mac-backed home folders ready (or off)" systemctl is-active --quiet ubuntu-vm-home-folders
 if [[ -f /etc/ubuntu-vm/personal-data.json ]]; then
   check "personal data mounted before login" systemctl is-active --quiet ubuntu-vm-personal-data
   check "personal data filesystem" mountpoint -q /mnt/ubuntu-vm-personal

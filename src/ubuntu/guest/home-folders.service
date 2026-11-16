@@ -1,0 +1,15 @@
+[Unit]
+Description=UbuntuVM shared Desktop, Documents and Downloads
+After=local-fs.target systemd-modules-load.service ubuntu-vm-personal-data.service
+Before=display-manager.service user@1000.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/sbin/modprobe 9pnet_virtio
+ExecStart=/usr/local/bin/ubuntu-vm-home-folders
+ExecStop=/usr/local/bin/ubuntu-vm-home-folders --stop
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

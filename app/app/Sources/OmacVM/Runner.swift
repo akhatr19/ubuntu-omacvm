@@ -435,6 +435,7 @@ final class Runner {
             _ = try UbuntuNetworking.read(c)
             (dataLock, personalDataArguments) = try UbuntuPersonalData.start(c)
             sharedFolderArguments = try UbuntuSharedFolders.arguments(c)
+            sharedFolderArguments += try UbuntuHomeFolders.arguments(c)
         }
         defer { if dataLock >= 0 { close(dataLock) } }
         startAudioThread = Settings.audioThread
@@ -774,6 +775,8 @@ final class Runner {
         qemuRuns = true
         process = p
         if Product.isUbuntu {
+            do { try UbuntuHomeFolders.install(c) }
+            catch { appendLog("Home folders: " + error.localizedDescription) }
             do { try UbuntuSharedFolders.watch(c, pid: p.processIdentifier) }
             catch { appendLog("Shared folders: " + error.localizedDescription) }
         }
