@@ -126,6 +126,9 @@ def supervise(vm, desktop=False):
                 time.sleep(.5)
             else:
                 raise TimeoutError('new environment did not reboot with its unique identity')
+        import sharing
+        sharing.start_watch(vm, pid=process.pid)
+        sharing.wait_ready(vm, process.pid)
         control = str(run_dir / 'ssh-control')
         master, master_args = connect_master(vm, control)
         state['ready'] = True

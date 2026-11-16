@@ -88,7 +88,7 @@ struct NewDeveloperEnvironmentView: View {
             directory("Base bundle", value: base) { base = choose() }
             Button("Build Base from Ubuntu ISO…") { buildBase() }.disabled(job.busy)
             HStack {
-                ForEach(["python", "node", "rust", "docker", "files"], id: \.self) { profile in
+                ForEach(["python", "node", "rust", "docker", "files", "sharing"], id: \.self) { profile in
                     Toggle(profile.capitalized, isOn: Binding(get: { profiles.contains(profile) }, set: { if $0 { profiles.insert(profile) } else { profiles.remove(profile) } }))
                 }
             }.disabled(job.busy)

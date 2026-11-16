@@ -19,7 +19,7 @@ struct UbuntuHomeView: View {
     @State private var pendingDelete: VMConfig?
     @State private var deleteBusy = false
     private enum VMSection: String, CaseIterable {
-        case overview = "Overview", projects = "Projects", network = "Network & SSH", files = "Files", snapshots = "Snapshots", resources = "Resources", input = "Input"
+        case overview = "Overview", projects = "Projects", network = "Connections", files = "Files", snapshots = "Snapshots", resources = "Resources", input = "Input"
     }
     private var selectedVM: VMConfig? { vms.first { $0.folder == selectedFolder } ?? vms.first }
     private var busy: Bool { job.busy || detailBusy }
@@ -181,7 +181,9 @@ struct UbuntuHomeView: View {
         case .network:
             VStack(spacing: 0) {
                 if DeveloperActions.name(vm) == nil {
-                    UbuntuVMControls(config: vm, running: statuses[vm.folder] != "Stopped", pane: .network).padding(.horizontal, 20).padding(.top, 12)
+                    DisclosureGroup("Advanced network engine") {
+                        UbuntuVMControls(config: vm, running: statuses[vm.folder] != "Stopped", pane: .network)
+                    }.padding(.horizontal, 20).padding(.top, 12)
                 }
                 UbuntuPortsView(state: state, config: vm, embedded: true)
             }
@@ -209,7 +211,7 @@ struct UbuntuHomeView: View {
                 if section == .overview {
                     HStack {
                         GroupBox("Connections") {
-                            VStack(alignment: .leading, spacing: 8) { Text("SSH, LAN access and published ports"); Button("Manage Network & SSH →") { section = .network } }.frame(maxWidth: .infinity, alignment: .leading).padding(7)
+                            VStack(alignment: .leading, spacing: 8) { Text("SSH, LAN access and published ports"); Button("Manage Connections →") { section = .network } }.frame(maxWidth: .infinity, alignment: .leading).padding(7)
                         }
                         GroupBox("Resources") {
                             VStack(alignment: .leading, spacing: 8) { Text("\(vm.cpus) CPUs · \(vm.memoryMB / 1024) GB RAM"); Button("Configure Resources →") { section = .resources } }.frame(maxWidth: .infinity, alignment: .leading).padding(7)

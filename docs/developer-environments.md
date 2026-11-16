@@ -289,8 +289,8 @@ distros; use per-VM toolchains or devcontainers where possible. Copying original
 space; review them yourself before removing anything. Finder's existing Home
 share can browse the mounted personal folders while that VM is running.
 
-Only one VM can own a writable data disk. Stop and detach it before attaching
-it elsewhere. Even a paused QEMU process retains ownership. A missing disk or
+Only one VM can own a writable data disk. Attaching elsewhere automatically releases its previous VM when both are
+stopped. Running owners are refused. Even a paused QEMU process retains ownership. A missing disk or
 incomplete setup blocks normal startup rather than creating an empty replacement.
 Deleted VMs leave their data disks intact and available to attach elsewhere.
 An interrupted first format is never repeated automatically: repair can mount
@@ -305,8 +305,8 @@ snapshots are not backups against loss of the Mac or its drive. System checkpoin
 and environment exports exclude personal data. A system restore keeps the
 attachment but requires **Repair / Reconfigure** before boot, since the restored
 guest may contain older mounting software. System forks start without a data disk.
-There is no coordinated system-and-data restore or simultaneous writable sharing
-in this version.
+Coordinated system-and-data restore is not provided. Raw disk attachments stay
+exclusive; use Live shared folders below for concurrent access.
 
 The same operations are available through the packaged CLI:
 
@@ -319,4 +319,70 @@ uvm data --vm /path/to/VM snapshots --id DATA_ID
 uvm data --vm /path/to/VM fork --id DATA_ID --snapshot-id SNAPSHOT_ID --name Agent
 uvm data --vm /path/to/VM detach
 uvm data --vm /path/to/VM restore --id DATA_ID --snapshot-id SNAPSHOT_ID
+```
+
+### Live shared folders (the default Files workflow)
+
+Workbench → Files presents **Shared folders** first. Create one from a stopped
+VM, or convert an existing personal disk. First setup makes a private copy of
+that VM's system in `.ubuntu-services`, gives it fresh management credentials,
+and prepares a background file service. The original system and local home
+folders are preserved. This requires the source VM to be stopped once; it does
+not copy a running filesystem or stop another VM without asking.
+
+Choose **Use in This VM** for each VM. Files appear under
+`~/Shared/<name>-<id>`; connecting does not hide local home folders and works
+while the VM is running. Several connected VMs and **Open in Finder** can read
+and edit the same files concurrently. Finder uses an authenticated, writable
+SMB share through private SSH. Linux uses NFSv4 through private SSH forwards.
+Neither service is published to the LAN. Clients receive stable, distinct NFS
+identities so cloned VMs with identical hostnames keep independent lock state
+([kernel client-identity documentation](https://cdn.kernel.org/doc/html/latest/filesystems/nfs/client-identifier.html)). The file service remains available
+when desktop VMs stop, so Finder does not depend on a desktop staying open.
+
+Normal VM startup reconnects registered folders before allowing desktop login;
+managed environments also wait for their folders before reporting ready.
+Connection failure leaves the data intact and reports an error; it does not
+substitute an empty data directory. Removing a connection unmounts normally
+and refuses busy files. It does not delete shared data. Stop File Service first
+ejects its Finder mounts and refuses while a connected VM is running.
+
+The service uses one CPU and up to 2 GB guest RAM, with free-page reclamation,
+and has no GPU, desktop window, Mac shares, or published LAN ports. Its cloned
+system shares physical blocks on APFS until changed. Each shared data disk has
+one service; adding clients does not create more storage VMs. Do not delete the
+hidden service folder manually: it contains the service's credentials and OS.
+The data disk remains in `.ubuntu-data`, outside all desktop VM folders.
+
+Clients need UID/GID 1000 and `nfs-common`. The optional **sharing** provisioning
+profile pins this prerequisite for locked environments. Unlocked clients install missing support. Locked clients refuse missing
+prerequisites until the sharing profile is provisioned, preserving their package lock. These are
+live network filesystems, not a bidirectional copy/sync system: simultaneous
+edits follow normal shared-file rules. Use separate working copies for concurrent
+Git operations, keep build caches and databases local when they require local
+filesystem semantics, and use polling for tools whose file watchers do not see
+changes originating on another machine.
+
+Raw disks and directional sync remain under **Advanced: disks, file services
+and sync**. Raw disk attachment automatically releases a stopped previous VM;
+it refuses running owners. Shared-folder backing disks cannot be stolen through
+the raw attachment controls. Data snapshots still require the file service to
+be stopped; coordinated system/data checkpoints are not provided.
+
+Workbench → **Connections** exposes **Connect to this VM** and **Publish a
+service** directly. A published service chooses a Linux port, a Mac port and
+Only this Mac or Local network access. These settings apply at the next start.
+SSH keys, automatic discovery, idle behavior and the network engine remain in
+Advanced controls.
+
+```sh
+# First creation reads the Finder sharing password from stdin.
+uvm sharing --vm /path/to/VM create --name Personal --size-gb 64
+# Or convert an existing independent data disk:
+uvm sharing --vm /path/to/VM create --id DATA_ID
+uvm sharing --vm /path/to/VM list
+uvm sharing --vm /path/to/VM use --id SHARED_ID
+uvm sharing --vm /path/to/VM connect --id SHARED_ID
+uvm sharing --vm /path/to/VM remove --id SHARED_ID
+uvm sharing --vm /path/to/VM stop --id SHARED_ID
 ```

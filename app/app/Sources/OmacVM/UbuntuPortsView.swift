@@ -14,6 +14,9 @@ struct UbuntuPortsView: View {
     @State private var editing = false
     @State private var problem: String?
     @State private var running = false
+    @State private var guestPort = "3000"
+    @State private var macPort = "3000"
+    @State private var shareLAN = false
 
     private var ports: [DeveloperPort] {
         let configured = settings.ports
@@ -22,9 +25,9 @@ struct UbuntuPortsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Ports & SSH — \(config.name)").font(.title2.bold())
+                Text("Connections — \(config.name)").font(.title2.bold())
                 Spacer()
-                Button("SSH Keys & Settings…") { editing = true }
+                Button("Advanced SSH & Network…") { editing = true }
                 if !embedded { Button("Close") { dismiss() } }
             }
             Text("Only this Mac means localhost. LAN sharing uses your Mac's IP and a separate port for each VM.").foregroundStyle(.secondary)
@@ -32,11 +35,12 @@ struct UbuntuPortsView: View {
             Text(running ? "Ubuntu is running. Configure new forwards while it is stopped; they publish on the next start." : "Ubuntu is stopped. Configured services will publish at its next start.").font(.callout)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    GroupBox("SSH") {
+                    GroupBox("Connect to this VM") {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text("From this Mac: SSH port \(config.sshPort)")
                                 Spacer()
+                                Button(settings.sshLAN ? "Manage LAN Access…" : "Allow LAN SSH…") { editing = true }
                                 Button("Open Terminal") {
                                     do { try DeveloperActions.terminal(config, path: "/home/\(config.user)") }
                                     catch { problem = error.localizedDescription }
@@ -48,8 +52,24 @@ struct UbuntuPortsView: View {
                                     let command = "ssh -p \(settings.sshPort) \(config.user)@\(address)"
                                     HStack { Text(command).font(.system(.caption, design: .monospaced)); Spacer(); Button("Copy") { copy(command) } }
                                 }
-                            } else { Text("Other devices: SSH sharing is off. Enable it in SSH Keys & Settings.").foregroundStyle(.secondary) }
+                            } else { Text("Other devices: private by default. Configure public keys and LAN access in Advanced SSH & Network.").foregroundStyle(.secondary) }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
+                    }
+                    GroupBox("Publish a service") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) { Text("Linux port").font(.caption); TextField("Linux port", text: $guestPort) }.frame(width: 80)
+                                Image(systemName: "arrow.right")
+                                VStack(alignment: .leading, spacing: 4) { Text("Mac port").font(.caption); TextField("Mac port", text: $macPort) }.frame(width: 80)
+                                Picker("Access", selection: $shareLAN) {
+                                    Text("Only this Mac").tag(false)
+                                    Text("Local network").tag(true)
+                                }
+                                Button("Publish") { publish() }.disabled(running)
+                            }
+                            Text("Run your app in Linux, then publish its port here. Local network also makes it reachable from other devices using your Mac’s address. Stop the VM to change publication.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.padding(6)
                     }
                     ForEach(ports, id: \.host) { port in
                         GroupBox {
@@ -62,6 +82,7 @@ struct UbuntuPortsView: View {
                                     Button("Open localhost:\(port.host)") { browser("127.0.0.1", port.host) }
                                     Button("Copy Local URL") { copy("http://127.0.0.1:\(port.host)") }
                                     Button("Test Port") { test(port) }
+                                    Button("Remove Rule") { unpublish(port) }.disabled(running || !settings.ports.contains(where: { $0.host == port.host }))
                                 }
                                 if port.lan {
                                     ForEach(UbuntuNetworking.lanAddresses, id: \.self) { address in
@@ -73,7 +94,7 @@ struct UbuntuPortsView: View {
                             }.padding(6)
                         }
                     }
-                    if ports.isEmpty { Text("No published services. Add a forward in settings, or enable automatic discovery for a developer environment.").padding(.vertical, 16) }
+                    if ports.isEmpty { Text("No services published yet. Add a Linux port above to make it available from this Mac or your local network.").padding(.vertical, 16) }
                 }
             }
             Text("Open uses HTTP; for databases and other protocols use the displayed address in your client. A successful local test does not verify access from another LAN device.").font(.caption).foregroundStyle(.secondary)
@@ -98,6 +119,21 @@ struct UbuntuPortsView: View {
             guard let host = $0["host"] as? Int, let guest = $0["guest"] as? Int, (1024...65535).contains(host), (1...65535).contains(guest) else { return nil }
             return DeveloperPort(host: host, guest: guest, lan: $0["bind"] as? String == "0.0.0.0")
         }
+    }
+    private func publish() {
+        guard let guest = Int(guestPort), let host = Int(macPort), (1...65535).contains(guest), (1024...65535).contains(host) else {
+            problem = "Enter a Linux port from 1–65535 and a Mac port from 1024–65535."; return
+        }
+        var updated = settings
+        updated.ports.append(DeveloperPort(host: host, guest: guest, lan: shareLAN))
+        do { try UbuntuNetworking.save(updated, config: config); refresh() }
+        catch { problem = error.localizedDescription }
+    }
+    private func unpublish(_ port: DeveloperPort) {
+        var updated = settings
+        updated.ports.removeAll { $0.host == port.host }
+        do { try UbuntuNetworking.save(updated, config: config); refresh() }
+        catch { problem = error.localizedDescription }
     }
     private func copy(_ value: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string) }
     private func browser(_ host: String, _ port: Int) { if let url = URL(string: "http://\(host):\(port)") { NSWorkspace.shared.open(url) } }

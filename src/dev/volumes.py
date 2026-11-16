@@ -21,8 +21,13 @@ BINDING = 'data-volume.json'
 FOLDERS = ('Projects', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos')
 
 
+def library(vm):
+    parent = Path(vm).resolve().parent
+    return parent.parent if parent.name == '.ubuntu-services' else parent
+
+
 def store(vm):
-    return rt.private_dir(Path(vm).parent / '.ubuntu-data')
+    return rt.private_dir(library(vm) / '.ubuntu-data')
 
 
 @contextlib.contextmanager
@@ -57,7 +62,7 @@ def volume(vm, identity):
     if type(record.get('size_gb')) is not int or not 4 <= record['size_gb'] <= 4096 or disk.stat().st_size != record['size_gb'] * 1024 ** 3:
         raise ValueError('personal data disk size differs from its metadata')
     owner = record.get('attached_vm')
-    if owner is not None and (not isinstance(owner, str) or Path(owner).resolve().parent != Path(vm).resolve().parent):
+    if owner is not None and (not isinstance(owner, str) or Path(owner).resolve().parent not in (library(vm), library(vm) / '.ubuntu-services')):
         raise ValueError('invalid personal data owner')
     if owner is not None: record['attached_vm'] = str(Path(owner).resolve())
     return folder, record
@@ -209,10 +214,15 @@ def prepare(vm, identity, folders):
     user = Session(vm, '/tmp').metadata['user']
     old_owner = Path(record['attached_vm']) if record.get('attached_vm') else None
     idle(vm, folder / 'data.img')
-    if old_owner and old_owner != vm and old_owner.exists():
-        raise ValueError('detach this disk from its current VM first')
     current = attached(vm, ready=False)
     if current and current[1]['id'] != identity: raise ValueError('detach the current data disk first')
+    if record.get('shared') and old_owner != vm:
+        raise ValueError('this disk backs a shared folder; use Shared Folders instead of attaching it directly')
+    if old_owner and old_owner != vm and old_owner.exists():
+        idle(old_owner, folder / 'data.img')
+        print('Releasing personal data from ' + old_owner.name + '…', flush=True)
+        detach(old_owner)
+        folder, record = volume(vm, identity)
     recover = not record['initialized'] and record.get('setup_started')
     record.update(attached_vm=str(vm), setup_started=True)
     write_json(folder / 'volume.json', record)

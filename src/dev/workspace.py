@@ -67,7 +67,7 @@ class Session:
             rt.ensure_up(self.vm)
         else:
             if (self.vm / 'fast-network').exists():
-                raise ValueError('turn off Fast network in Workbench → Network & SSH to use localhost project connections')
+                raise ValueError('turn off Fast network in Workbench → Connections to use localhost project connections')
             if not self.qga:
                 raise ValueError('the desktop VM guest-agent socket is required')
             if not rt.disk_busy(self.vm):

@@ -6,7 +6,7 @@ had_samba=0; command -v smbd >/dev/null 2>&1 && had_samba=1
 export DEBIAN_FRONTEND=noninteractive
 apt-get update </dev/null
 apt-get install -y --no-install-recommends samba samba-vfs-modules rsync </dev/null
-if (( ! had_samba )); then systemctl disable --now smbd nmbd >/dev/null 2>&1 || true; fi
+if (( ! had_samba )) || [[ ${PERSONAL_ONLY:-0} == 1 ]]; then systemctl disable --now smbd nmbd >/dev/null 2>&1 || true; fi
 H=$(getent passwd "$U" | cut -d: -f6)
 [[ $H == /* && $H != *[$'\n\r']* ]] || exit 2
 install -d -m700 /etc/ubuntu-vm /var/lib/ubuntu-vm-samba/{private,state,cache,lock} /run/ubuntu-vm-samba
@@ -29,6 +29,7 @@ state directory = /var/lib/ubuntu-vm-samba/state
 cache directory = /var/lib/ubuntu-vm-samba/cache
 lock directory = /var/lib/ubuntu-vm-samba/lock
 pid directory = /run/ubuntu-vm-samba
+ncalrpc dir = /run/ubuntu-vm-samba/ncalrpc
 log file = /var/log/ubuntu-vm-samba.log
 load printers = no
 printing = bsd
@@ -51,6 +52,18 @@ read only = no
 browseable = yes
 wide links = no
 EOF
+if [[ ${PERSONAL_ONLY:-0} == 1 ]]; then sed -i '/^\[Root\]/,$d' /etc/ubuntu-vm/smb.conf; fi
+if mountpoint -q /mnt/ubuntu-vm-personal; then
+  cat >> /etc/ubuntu-vm/smb.conf <<EOF
+[Personal]
+path = /mnt/ubuntu-vm-personal
+valid users = $U
+force user = $U
+read only = no
+browseable = yes
+wide links = no
+EOF
+fi
 printf '%s\n%s\n' "$PASS" "$PASS" | smbpasswd -c /etc/ubuntu-vm/smb.conf -s -a "$U" >/dev/null
 unset PASS
 testparm -s /etc/ubuntu-vm/smb.conf >/dev/null
@@ -69,5 +82,6 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 systemctl enable ubuntu-vm-files.service >/dev/null
+systemctl reset-failed ubuntu-vm-files.service
 systemctl restart ubuntu-vm-files.service
 systemctl is-active --quiet ubuntu-vm-files.service

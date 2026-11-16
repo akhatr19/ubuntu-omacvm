@@ -55,8 +55,11 @@ class VolumeTests(unittest.TestCase):
         record = self.create(); self.prepare(record)
         other = self.root / 'OmacVM Test-other'; shutil.copytree(self.vm, other)
         (other / volumes.BINDING).unlink()
-        with self.assertRaisesRegex(ValueError, 'detach'):
+        with mock.patch('volumes.maintenance'):
             volumes.prepare(other, record['id'], ['Projects'])
+        self.assertFalse((self.vm / volumes.BINDING).exists())
+        self.assertEqual(volumes.attached(other)[1]['attached_vm'], str(other))
+        self.prepare(record)
         binding = self.vm / volumes.BINDING
         binding.write_text(json.dumps({'schema':1, 'id':record['id'], 'ready':False}))
         with self.assertRaisesRegex(ValueError, 'finish'): volumes.arguments(self.vm)
@@ -71,6 +74,15 @@ class VolumeTests(unittest.TestCase):
                               lambda: volumes.snapshot(self.vm, record['id'], 'Busy')):
                 with self.assertRaisesRegex(ValueError, 'stop'): operation()
             maintenance.assert_not_called()
+
+    def test_handover_refuses_a_running_previous_owner_without_changes(self):
+        record = self.create(); self.prepare(record)
+        other = self.root / 'OmacVM Test-other'; shutil.copytree(self.fixture(), other)
+        with mock.patch('volumes.rt.disk_busy', side_effect=lambda vm: vm == self.vm), mock.patch('volumes.maintenance') as maintenance:
+            with self.assertRaisesRegex(ValueError, 'stop'): volumes.prepare(other, record['id'], ['Projects'])
+            maintenance.assert_not_called()
+        self.assertEqual(volumes.attached(self.vm)[1]['id'], record['id'])
+        self.assertFalse((other / volumes.BINDING).exists())
 
     def test_interrupted_setup_cannot_reformat_on_retry(self):
         record = self.create()

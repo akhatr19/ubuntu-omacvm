@@ -6,7 +6,8 @@ private struct PersonalDisk: Decodable, Identifiable {
     let sizeGb: Int
     let attachedVm: String?
     let initialized: Bool
-    enum CodingKeys: String, CodingKey { case id, name, initialized; case sizeGb = "size_gb", attachedVm = "attached_vm" }
+    let shared: Bool?
+    enum CodingKeys: String, CodingKey { case id, name, initialized, shared; case sizeGb = "size_gb", attachedVm = "attached_vm" }
 }
 
 private struct PersonalSnapshot: Decodable, Identifiable {
@@ -60,10 +61,10 @@ struct UbuntuPersonalDataView: View {
                     }
                     HStack {
                         Button(attached == selected ? "Repair / Reconfigure…" : "Attach & Set Up…") { confirm = "attach" }
-                            .disabled(running || folders.isEmpty || (disk.attachedVm.map { FileManager.default.fileExists(atPath: $0) && $0 != UbuntuPersonalData.canonical(config.folder) } ?? false))
+                            .disabled(running || folders.isEmpty || disk.shared == true)
                         Button("Detach…") { confirm = "detach" }.disabled(running || attached != selected)
                     }
-                    Text("Stop the VM first. Setup uses a private maintenance boot and returns it to a stopped state. To switch distros, detach here and attach in the other VM’s Files tab.")
+                    Text("Stop the VM first. Setup uses a private maintenance boot and returns it to a stopped state. Attaching automatically releases a stopped previous VM. For simultaneous access, use Shared Folders above.")
                         .font(.caption).foregroundStyle(.secondary)
                     DisclosureGroup("Data snapshots & forks") {
                         VStack(alignment: .leading, spacing: 8) {

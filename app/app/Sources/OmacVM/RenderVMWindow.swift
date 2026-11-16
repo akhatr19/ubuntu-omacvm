@@ -314,6 +314,18 @@ enum RenderVMWindow {
             try? JSONSerialization.data(withJSONObject: personal).write(to: dataFolder.appendingPathComponent("volume.json"))
             let binding: [String: Any] = ["schema": 1, "id": id, "ready": true, "folders": ["Projects", "Documents"]]
             try? JSONSerialization.data(withJSONObject: binding).write(to: config.folder.appendingPathComponent("data-volume.json"))
+            let server = tmp.appendingPathComponent(".ubuntu-services/Files-preview")
+            try? FileManager.default.createDirectory(at: server, withIntermediateDirectories: true)
+            var sharedRecord = personal
+            sharedRecord["shared"] = true
+            sharedRecord["attached_vm"] = UbuntuPersonalData.canonical(server)
+            try? JSONSerialization.data(withJSONObject: sharedRecord).write(to: dataFolder.appendingPathComponent("volume.json"))
+            try? FileManager.default.removeItem(at: config.folder.appendingPathComponent("data-volume.json"))
+            let live: [String: Any] = ["schema": 1, "id": id, "server": UbuntuPersonalData.canonical(server), "nfs_port": 53234,
+                                      "clients": [UbuntuPersonalData.canonical(config.folder)]]
+            try? JSONSerialization.data(withJSONObject: live).write(to: dataFolder.appendingPathComponent("sharing.json"))
+            let links: [String: Any] = ["schema": 1, "folders": [["id": id, "port": 53235, "folder": "Personal-aaaaaa"]]]
+            try? JSONSerialization.data(withJSONObject: links).write(to: config.folder.appendingPathComponent("shared-folders.json"))
             let networkFile = config.folder.appendingPathComponent(DeveloperNetwork.file)
             let savedFast = try? Data(contentsOf: config.folder.appendingPathComponent("fast-network"))
             try? FileManager.default.removeItem(at: config.folder.appendingPathComponent("fast-network"))
@@ -352,7 +364,7 @@ enum RenderVMWindow {
                 UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project], previewSection: "Overview", previewRunning: true)
             }
             state.vmRunning = previousRunning
-            for section in ["Resources", "Input", "Network & SSH", "Files"] {
+            for section in ["Resources", "Input", "Connections", "Files"] {
                 picture("screen-workbench-" + section.replacingOccurrences(of: " & ", with: "-").lowercased(), into: dirURL) {
                     UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project], previewSection: section)
                 }

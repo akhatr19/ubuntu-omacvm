@@ -19,6 +19,7 @@ final class Runner {
     let config: VMConfig
     private(set) var process: Process?
     private var personalDataArguments: [String] = []
+    private var sharedFolderArguments: [String] = []
     private let sleep = VMHostSleepCoordinator()
     private var gpuMemory: GPUMemoryWatch?
     private var featuresRoute: ControlCentreRoute?
@@ -232,6 +233,7 @@ final class Runner {
         // moves no other device (the VM finds it by its tag, wherever it is).
         let share = MacFolder.plan(c)
         macFolder = share.record
+        a += sharedFolderArguments
         a += personalDataArguments
         a += share.arguments
         // Drag and drop (drag-drop on only; docs/drag-and-drop.md): its port
@@ -432,6 +434,7 @@ final class Runner {
         if Product.isUbuntu {
             _ = try UbuntuNetworking.read(c)
             (dataLock, personalDataArguments) = try UbuntuPersonalData.start(c)
+            sharedFolderArguments = try UbuntuSharedFolders.arguments(c)
         }
         defer { if dataLock >= 0 { close(dataLock) } }
         startAudioThread = Settings.audioThread
@@ -770,6 +773,10 @@ final class Runner {
         try p.run()
         qemuRuns = true
         process = p
+        if Product.isUbuntu {
+            do { try UbuntuSharedFolders.watch(c, pid: p.processIdentifier) }
+            catch { appendLog("Shared folders: " + error.localizedDescription) }
+        }
         dropPeer?.set(p.processIdentifier)
         mark(pid: p.processIdentifier)
         if usbOn {

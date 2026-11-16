@@ -178,7 +178,7 @@ set -e; umask 077; mkdir -p "$HOME/.ssh"; t=$(mktemp "$HOME/.ssh/.uvm.XXXXXX"); 
 fi
 hostnamectl set-hostname %s
 sed -i %s /etc/omacvm/env
-systemctl stop gdm3.service 2>/dev/null || true
+systemctl stop --no-block gdm3.service 2>/dev/null || true
 systemctl restart ssh.service
 cat /etc/ssh/ssh_host_ed25519_key.pub
 ''' % (shlex.quote(user), shlex.quote(key), 'new' if not (vm / 'identity-ready').exists() else 'existing',
@@ -324,6 +324,8 @@ def qemu_plan(vm, port, desktop=False):
             '-serial', f'file:{q(vm / "logs/developer-console.log")}', '-monitor', 'none']
     import volumes
     args += volumes.arguments(vm)
+    import sharing
+    args += sharing.arguments(vm)
     share = vm / 'mac-folder'
     if share.exists():
         text = share.read_text().strip()
@@ -346,4 +348,16 @@ def qemu_plan(vm, port, desktop=False):
                OMACVM_GPU_MEMORY_STATUS=str(vm / 'logs/gpu-memory'), OMACVM_PRODUCT_NAME='UbuntuVM Desktop' if desktop else 'UbuntuVM')
     if desktop and not (os.environ.get('UVM_TEST_MODE') == '1' and os.environ.get('OMACVM_COCOA_HIDDEN') == '1'):
         env.pop('OMACVM_COCOA_HIDDEN', None)
+    if (vm / 'file-service').exists():
+        headless = []
+        index = 1
+        while index < len(args):
+            option = args[index]
+            if option == '-device' and args[index + 1].startswith('virtio-gpu'):
+                index += 2
+            elif option == '-display':
+                headless += [option, 'none']; index += 2
+            else:
+                headless.append(option); index += 1
+        args = args[:1] + headless
     return args, env

@@ -24,6 +24,15 @@ def parser():
     p.add_argument('-e', '--env', help='managed environment name')
     p.add_argument('-f', '--manifest', type=Path, help='project uvm.json (otherwise search parent folders)')
     sub = p.add_subparsers(dest='command')
+    shared = sub.add_parser('sharing', help='live shared folders for Finder and multiple VMs')
+    shared.add_argument('--vm', type=Path, required=True)
+    shared.add_argument('--qga', type=Path)
+    shared.add_argument('action', choices=('list', 'create', 'use', 'remove', 'connect', 'stop', 'watch'))
+    shared.add_argument('--id')
+    shared.add_argument('--name')
+    shared.add_argument('--size-gb', type=int, default=64)
+    shared.add_argument('--pid', type=int)
+    shared.add_argument('--output', type=Path)
     data = sub.add_parser('data', help='independent personal disks, attachments, snapshots and forks')
     data.add_argument('--vm', type=Path, required=True)
     data.add_argument('action', choices=('list', 'create', 'attach', 'detach', 'snapshot', 'snapshots', 'fork', 'restore'))
@@ -213,6 +222,9 @@ def main(argv=None):
         state = rt.ensure_up(vm)
         os.execv('/usr/bin/nc', ['nc', '127.0.0.1', str(state['ssh_port'])])
     args = parser().parse_args(argv)
+    if args.command == 'sharing':
+        import sharing
+        return sharing.main(args)
     if args.command == 'data':
         import volumes
         return volumes.main(args)

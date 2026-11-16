@@ -35,7 +35,22 @@ def agent(session, command, data=None, timeout=600):
     raise TimeoutError('Ubuntu file service is still installing; wait for its package operation to finish')
 
 
-def setup(session, password):
+def upload(session, source, destination):
+    """Keep guest-agent requests small; large guest-exec argv can stall serial IO."""
+    import base64
+    socket = rt.sockets(session.vm) / 'qga' if session.managed else session.qga
+    handle = rt.socket_request(socket, 'guest-file-open', {'path': destination, 'mode': 'w'}, qga=True)
+    try:
+        for offset in range(0, len(source), 1024):
+            block = source[offset:offset + 1024]
+            result = rt.socket_request(socket, 'guest-file-write', {'handle': handle, 'buf-b64': base64.b64encode(block).decode()}, qga=True)
+            if result.get('count') != len(block): raise RuntimeError('guest file transfer was incomplete')
+        rt.socket_request(socket, 'guest-file-flush', {'handle': handle}, qga=True)
+    finally:
+        rt.socket_request(socket, 'guest-file-close', {'handle': handle}, qga=True)
+
+
+def setup(session, password, personal_only=False):
     if not 8 <= len(password) <= 256 or any(c in password for c in '\r\n\0'):
         raise ValueError('choose a sharing password of 8–256 characters, without line breaks')
     user = session.metadata['user']
@@ -43,7 +58,7 @@ def setup(session, password):
     source = (rt.ROOT / 'src/ubuntu/guest/file-sharing.sh').read_text()
     # Script arguments contain only the account name. The password is stdin,
     # never a command-line argument, saved host file or console message.
-    agent(session, 'U=' + shlex.quote(user) + '\n' + source, (password + '\n').encode(), timeout=900)
+    agent(session, 'U=' + shlex.quote(user) + '\nPERSONAL_ONLY=' + ('1' if personal_only else '0') + '\n' + source, (password + '\n').encode(), timeout=900)
     file = session.vm / 'finder-drive.json'
     old = json.loads(file.read_text()) if file.is_file() and not file.is_symlink() and file.stat().st_size <= 8192 else {}
     port = old.get('port')

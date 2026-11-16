@@ -5,7 +5,7 @@ import SwiftUI
 /// NetFS handles Finder's SMB credentials; the app never puts passwords in URLs.
 enum UbuntuDriveMount {
     nonisolated static func mount(port: Int, user: String, share: String, password: String?) -> (error: String?, path: String?) {
-        guard (1024...65535).contains(port), ["Root", "Home"].contains(share), let url = URL(string: "smb://127.0.0.1:\(port)/\(share)") else { return ("Invalid Finder connection.", nil) }
+        guard (1024...65535).contains(port), ["Root", "Home", "Personal"].contains(share), let url = URL(string: "smb://127.0.0.1:\(port)/\(share)") else { return ("Invalid Finder connection.", nil) }
         let volumes = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeURLForRemountingKey]) ?? []
         for volume in volumes {
             guard let remote = try? volume.resourceValues(forKeys: [.volumeURLForRemountingKey]).volumeURLForRemounting,
@@ -51,17 +51,20 @@ struct UbuntuDataView: View {
     @State private var running = true
     @State private var mounting = false
     @State private var personalBusy = false
+    @State private var sharedBusy = false
     @State private var problem: String?
-    private var busy: Bool { job.busy || mounting || personalBusy }
+    private var busy: Bool { job.busy || mounting || personalBusy || sharedBusy }
     private var enabled: Bool { FileManager.default.fileExists(atPath: config.folder.appendingPathComponent("finder-drive.json").path) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("Files & Sync — \(config.name)").font(.title2.bold()); Spacer(); if !embedded { Button("Close") { dismiss() }.disabled(busy) } }
-            Text("Finder access and sync start Ubuntu when needed. Disk checkpoints are separate and require Ubuntu to be stopped.").foregroundStyle(.secondary)
+            HStack { Text("Files — \(config.name)").font(.title2.bold()); Spacer(); if !embedded { Button("Close") { dismiss() }.disabled(busy) } }
+            Text("Shared folders stay live in Finder and across running VMs. Local home settings and installed tools stay with each VM.").foregroundStyle(.secondary)
             if let problem { Text(problem).foregroundStyle(.red).textSelection(.enabled) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    UbuntuSharedFoldersView(config: config, running: running) { sharedBusy = $0 }.disabled(personalBusy)
+                    DisclosureGroup("Advanced: disks, file services and sync") {
                     UbuntuPersonalDataView(config: config, running: running) { personalBusy = $0 }
                     Group {
                     GroupBox("Linux data in Mac Finder") {
@@ -116,10 +119,13 @@ struct UbuntuDataView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
                     }
                     }.disabled(busy)
+                    }
                 }.disabled(job.busy || mounting)
             }
             if busy { ProgressView(mounting ? "Connecting Finder…" : "Preparing Ubuntu files…") }
-            ScrollView { Text(job.output).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 90)
+            if !job.output.isEmpty {
+                ScrollView { Text(job.output).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 90)
+            }
         }.padding(22).frame(width: embedded ? nil : 780, height: embedded ? nil : 680)
         .onAppear { linux = "/home/\(config.user)/Projects"; macPath = MacFolder.path(config) }
         .task {
