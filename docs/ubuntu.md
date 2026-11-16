@@ -277,3 +277,9 @@ stand in for the current helper. **Repair Helper** reinstalls the packaged helpe
 if it is missing. Your VM disk and settings are preserved.
 
 See [Snapshots, forks and files](snapshots-and-files.md) for disk restore, branches, Finder access and directional sync.
+
+The Ubuntu gestures helper starts fullscreen escape/return immediately through
+its existing Dock-swipe path when shortcut modifiers are still held, avoiding
+the former wait of up to one second for key release. If posting is refused, it
+retains the keyboard fallback. macOS still controls the Space animation; the
+helper keeps its late-transition checks to avoid accidentally skipping a Space.
