@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import IOKit
 import Foundation
 import OmacVMUpdate
@@ -40,7 +41,7 @@ enum Paths {
     }
     /// Decided once per launch: the VMs folder must not change under a VM
     /// that runs or is being built.
-    private static let defaultVMsRoot = VMsFolder.resolve(custom: nil, home: VMsFolder.home)
+    private static let defaultVMsRoot = Product.isUbuntu ? VMsFolder.home.appendingPathComponent("UbuntuVMs") : VMsFolder.resolve(custom: nil, home: VMsFolder.home)
 
     /// The installed app's (org.omacvm.app) VMs folders, read once per
     /// launch: a test build never acts on a VM in one of them (TestVMs).
@@ -159,6 +160,9 @@ enum Paths {
 
 /// The app's display name: what the user called the app (OmacVM, Omarchy, ...).
 enum Product {
+    static var isUbuntu: Bool { Bundle.main.bundleIdentifier?.hasPrefix("org.omacvm.ubuntu") == true }
+    static var buildLabel: String { InstallMemory.displayVersion(of: Bundle.main.bundleURL) }
+    static var guestName: String { isUbuntu ? "Ubuntu" : "Omarchy" }
     static var name: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "OmacVM"
     }
@@ -166,14 +170,15 @@ enum Product {
 
 /// One VM: a folder with vm.env, disk.img, efi-vars.fd and logs/.
 struct VMConfig: Equatable {
-    var name = "Omarchy"
+    var guest: GuestProfile = Product.isUbuntu ? .ubuntu : .omarchy
+    var name = Product.guestName
     var cpus = 4
     var memoryMB = 8192
     var diskGB = 64
     var sshPort = 52222
     var user = ""
     var fullName = ""
-    var hostname = "omarchy"
+    var hostname = Product.isUbuntu ? "ubuntu" : "omarchy"
     var timeZone = "UTC"
     var language = "en_US.UTF-8"
     var keyboard = "us"
@@ -181,6 +186,15 @@ struct VMConfig: Equatable {
     // for a vm.env without FEATURES: no screens asked here (VMConfig is
     // also made off the main thread), so Omanotch only with a notch then.
     var features = NewVMFeatures.string(hasBattery: Mac.hasBattery, hasNotch: false)
+
+    var isUbuntu: Bool { guest == .ubuntu }
+    var isOmarchy: Bool { guest == .omarchy }
+    var isCustom: Bool { guest == .custom }
+
+    static func defaultFeatures(for guest: GuestProfile) -> String {
+        let catalog = (try? String(contentsOf: Paths.resources.appendingPathComponent("omacvm/src/features.tsv"), encoding: .utf8)) ?? ""
+        return guest.defaults(catalog: catalog, hasBattery: Mac.hasBattery, hasNotch: Mac.hasNotch)
+    }
 
     /// The folder of a VM that exists (it may be in an older VMs folder);
     /// nil for a new one, which goes into the VMs folder under its name.
@@ -232,16 +246,7 @@ struct VMConfig: Equatable {
 
     /// Same id as scripts/vm-common.sh: the first 8 hex digits of SHA-1 of the folder path.
     var id: String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
-        let input = Pipe(), output = Pipe()
-        p.standardInput = input; p.standardOutput = output
-        try? p.run()
-        input.fileHandleForWriting.write(folder.path.data(using: .utf8)!)
-        try? input.fileHandleForWriting.close()
-        p.waitUntilExit()
-        let s = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "00000000"
-        return String(s.prefix(8))
+        String(Insecure.SHA1.hash(data: Data(folder.path.utf8)).map { String(format: "%02x", $0) }.joined().prefix(8))
     }
     var qmpSocket: URL { Paths.runDir.appendingPathComponent("\(id).qmp") }
     var agentSocket: URL { Paths.runDir.appendingPathComponent("\(id).qga") }
@@ -281,6 +286,7 @@ struct VMConfig: Equatable {
 
         """
         try text.write(to: folder.appendingPathComponent("vm.env"), atomically: true, encoding: .utf8)
+        try (guest.rawValue + "\n").write(to: folder.appendingPathComponent("guest-os"), atomically: true, encoding: .utf8)
     }
 
     /// Only CPUS and MEM_MB in vm.env, every other line as it was (`omacvm
@@ -317,6 +323,8 @@ struct VMConfig: Equatable {
         }
         var c = VMConfig()
         c.location = folder.standardizedFileURL
+        let os = (try? String(contentsOf: folder.appendingPathComponent("guest-os"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        c.guest = os.flatMap(GuestProfile.init(rawValue:)) ?? (FileManager.default.fileExists(atPath: folder.appendingPathComponent("guest-os").path) ? .custom : .omarchy)
         c.name = values["NAME"] ?? folder.lastPathComponent
         c.cpus = Int(values["CPUS"] ?? "") ?? c.cpus
         c.memoryMB = Int(values["MEM_MB"] ?? "") ?? c.memoryMB
@@ -324,7 +332,7 @@ struct VMConfig: Equatable {
         c.sshPort = Int(values["SSH_PORT"] ?? "") ?? c.sshPort
         c.user = values["VM_USER"] ?? ""
         c.fullName = values["VM_FULLNAME"] ?? ""
-        c.hostname = values["VM_HOSTNAME"] ?? c.hostname
+        c.hostname = values["VM_HOSTNAME"] ?? c.guest.rawValue
         c.timeZone = values["VM_TZ"] ?? c.timeZone
         c.language = values["VM_LANG"] ?? c.language
         c.keyboard = values["KEYBOARD"] ?? c.keyboard
@@ -774,7 +782,10 @@ enum Settings {
     /// use the cursor plane yet (docs/routes/app.md), so it changes nothing
     /// there today. From the VM's next start.
     /// Hidden: defaults write org.omacvm.app macPointer -bool true
-    static var macPointer: Bool { UserDefaults.standard.bool(forKey: "macPointer") }
+    static var macPointer: Bool {
+        UserDefaults.standard.object(forKey: "macPointer") == nil ? Product.isUbuntu
+            : UserDefaults.standard.bool(forKey: "macPointer")
+    }
 }
 
 extension GhosttyGPU.Driver {

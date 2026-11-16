@@ -114,6 +114,7 @@ final class Updater: ObservableObject {
 
     /// nil when this copy can update itself, else why not.
     var unavailableReason: String? {
+        if Product.isUbuntu { return "UbuntuVM updates are built from the Ubuntu fork. Upstream OmacVM releases contain the Omarchy installer." }
         if keys.shipped.isEmpty { return "This build has no release key yet: updates start with a release that has one." }
         if Version(currentVersion) == nil { return "This build (\(currentVersion)) is not a release version." }
         if ProcessInfo.processInfo.environment["OMACVM_RESOURCES"] != nil { return "Updates are off when run from the source tree." }
@@ -758,6 +759,8 @@ final class Updater: ObservableObject {
 
     /// From the app delegate: the VM this launcher runs, and its controls.
     var runningVM: () -> (folder: URL, name: String)? = { nil }
+    /// The running VM's QEMU: a question may take the keys from it (AskKeys).
+    var qemuPID: () -> pid_t? = { nil }
     var powerDownVM: () -> Void = {}
     var forceStopVM: () -> Void = {}
     var startVMAgain: (URL) -> Void = { _ in }
@@ -848,8 +851,9 @@ final class Updater: ObservableObject {
             if let why { log("OMACVM_RESTART_FORCE refused: \(why)") }
             force = hook == "1" && why == nil
         } else {
-            NSApp.activate()
-            force = Self.shutdownTimeoutAlert().runModal() == .alertSecondButtonReturn
+            let alert = Self.shutdownTimeoutAlert()
+            AskKeys.take(alert.window, overVM: qemuPID())
+            force = alert.runModal() == .alertSecondButtonReturn
         }
         guard force, let vm = runningVM(), let version else { return }
         restarting = true

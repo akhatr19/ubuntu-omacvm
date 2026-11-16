@@ -17,13 +17,18 @@ final class ControlCentreRoute {
     let requestName: String
     private let agentPath: String
     private let vmName: String
+    private let ubuntu: Bool
     private let log: (String) -> Void
+    /// AskKeys, from the Runner: this file also builds on its own (app-idle.sh).
+    private let takeKeys: (NSWindow) -> Void
     private var observer: NSObjectProtocol?
     private var busy = false
 
-    init(agentPath: String, vmName: String, log: @escaping (String) -> Void) {
+    init(agentPath: String, vmName: String, ubuntu: Bool = false, takeKeys: @escaping (NSWindow) -> Void, log: @escaping (String) -> Void) {
         self.agentPath = agentPath
         self.vmName = vmName
+        self.ubuntu = ubuntu
+        self.takeKeys = takeKeys
         self.log = log
         requestName = "\(Bundle.main.bundleIdentifier ?? "org.omacvm.app").features.\(getpid())"
     }
@@ -45,7 +50,8 @@ final class ControlCentreRoute {
         guard !busy else { return }
         busy = true
         let path = agentPath
-        let wrapper = "[ -x \(Self.script) ] || exit \(Self.tooOld); exec \(Self.script)"
+        let script = ubuntu ? "/usr/local/lib/omacvm/open-settings" : Self.script
+        let wrapper = "[ -x \(script) ] || exit \(Self.tooOld); exec \(script)"
         Thread.detachNewThread { [weak self] in
             let outcome = GuestAgent.runAndWait(socketPath: path, "/bin/sh", ["-c", wrapper], seconds: 12)
             DispatchQueue.main.async {
@@ -59,11 +65,12 @@ final class ControlCentreRoute {
         log("OmacVM: Features…: \(Self.record(outcome))")
         guard let (title, text) = Self.problem(outcome, vmName: vmName) else { return }
         let qemu = NSWorkspace.shared.frontmostApplication
-        NSApp.activate()
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = text
         alert.addButton(withTitle: "OK")
+        // The click was in QEMU's menu, up to 12 s ago.
+        takeKeys(alert.window)
         alert.runModal()
         qemu?.activate()
     }

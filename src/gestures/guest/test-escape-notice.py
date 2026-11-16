@@ -100,4 +100,12 @@ else:
 os.chmod(locked, stat.S_IRWXU)
 check(all(send(g, w) == [] for w in (b"N space-shortcut-off", b"N space-unchanged", b"N no-spaces", b"N some-new-word")),
       "no way out (N <why> from a Mac helper up to 3.0.18): no notice")
+os.environ["OMACVM_GUEST_OS"] = "ubuntu"
+desktop[0] = True
+g._capture_hint_at = None
+capture = send(g, b"S on")
+check(len(capture) == 1 and "Control + Option + Escape" in capture[0][0], "Ubuntu capture shows the way back to macOS")
+check(send(g, b"S on") == [], "Ubuntu capture hint is throttled across focus changes")
+check(send(g, b"S off") == [] and send(g, b"S esc ctrl-opt") == [], "Ubuntu release does not add notifications")
+os.environ.pop("OMACVM_GUEST_OS", None)
 sys.exit(1 if fails else 0)

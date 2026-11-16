@@ -65,7 +65,7 @@ enum RenderVMWindow {
         NSApp.setActivationPolicy(.prohibited)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("omacvm-render-\(getpid())")
-        let folder = tmp.appendingPathComponent("Omarchy")
+        let folder = tmp.appendingPathComponent(Product.guestName)
         guard let config = makeVM(folder) else {
             print("could not make the VM folder in \(tmp.path)")
             exit(1)
@@ -150,6 +150,7 @@ enum RenderVMWindow {
         try? VMDisk.setJobs([], config)
         try? config.writeResources()
         state.config = config
+        missionControlPictures(state, usual)
         memoryPictures(state, config, usual)
 
         // Disk › Change… open: a 128 GB disk with 9 GB used, a smaller size
@@ -224,7 +225,7 @@ enum RenderVMWindow {
         notSetUp.running = true
         window("window-25-mac-setup-login-items-vm-runs", state, notSetUp)
 
-        movePictures(state, config, usual, staged: staged)
+        if !Product.isUbuntu { movePictures(state, config, usual, staged: staged) }
 
         // Long names: a VM name of 62 characters, a deep VMs folder, a
         // message, an older OmacVM in the VM (Update VM).
@@ -262,6 +263,29 @@ enum RenderVMWindow {
         window("screen-2-unavailable", state, usual)
         state.screen = .install
         window("screen-3-install", state, usual)
+        if Product.isUbuntu {
+            // An installed legacy copy: exercise Update and Open without
+            // reading the person's installed app or changing their defaults.
+            let apps = tmp.appendingPathComponent("Applications")
+            let app = apps.appendingPathComponent("UbuntuVM.app/Contents")
+            try? FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+            let info: [String: String] = ["CFBundleIdentifier": Installer.appBundleID,
+                                         "CFBundleShortVersionString": "3.4.1"]
+            try? PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+                .write(to: app.appendingPathComponent("Info.plist"))
+            let suite = tmp.appendingPathComponent("install-defaults").path
+            let defaults = UserDefaults(suiteName: suite)!
+            let other = apps.appendingPathComponent("UbuntuVM Previous.app/Contents")
+            try? FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+            let older: [String: Any] = ["CFBundleIdentifier": Installer.appBundleID,
+                "CFBundleShortVersionString": "0.1", "CFBundleVersion": "6", "UbuntuVMDevBuild": true]
+            try? PropertyListSerialization.data(fromPropertyList: older, format: .xml, options: 0)
+                .write(to: other.appendingPathComponent("Info.plist"))
+            let memory = InstallMemory(defaults: defaults, bundleID: Installer.appBundleID, appFolders: [apps])
+            picture("screen-4-update", into: dirURL) { InstallView(memory: memory) {} }
+            sides("screen-4-update", height: smallHeight)
+            defaults.removePersistentDomain(forName: suite)
+        }
         state.screen = .ready
 
         // The sheets: Delete (typed, and while the VM runs), All VMs, USB
@@ -271,13 +295,100 @@ enum RenderVMWindow {
         let all = StorageModel()
         all.shownRoot = longRoot
         all.root = longRoot
-        all.vms = [("Omarchy", 41), ("OmacVM Test with a very long VM name to check the window sides", 23), ("Bench", 9)].compactMap { n, gb in
+        all.vms = [(Product.guestName, 41), ("OmacVM Test with a very long VM name to check the window sides", 23), ("Bench", 9)].compactMap { n, gb in
             var c = VMConfig()
             c.name = n
             c.location = longRoot.appendingPathComponent(n)
             return StorageModel.Entry(config: c, size: Int64(gb) * DiskSize.gib, legacy: n == "Bench")
         }
         sheet("sheet-4-all-vms") { AllVMsView(storage: all, selected: all.vms.first?.folder) {} }
+        if Product.isUbuntu {
+            // Exercise the real data-library query against disposable metadata.
+            for guest in [GuestProfile.omarchy, .custom] {
+                if var variant = makeVM(tmp.appendingPathComponent("Profile-" + guest.rawValue), name: guest.title) {
+                    variant.guest = guest
+                    variant.features = VMConfig.defaultFeatures(for: guest)
+                    try? variant.write()
+                    let profileState = AppState(watchDrives: false)
+                    profileState.config = variant; profileState.screen = .setup; profileState.showHome = false
+                    picture("setup-profile-" + guest.rawValue, into: dirURL) { SetupView(state: profileState) }
+                    profileState.screen = .ready
+                    picture("screen-profile-" + guest.rawValue, into: dirURL) {
+                        UbuntuHomeView(state: profileState, fixtures: [variant], previewSection: guest == .omarchy ? "Input" : "Overview")
+                    }
+                }
+            }
+            let discovered = UbuntuHomeView.discoveredVMs(roots: [tmp, tmp])
+            let profiles = Set(discovered.map(\.guest))
+            note("Workbench discovery: Ubuntu, Omarchy and custom guests, without duplicate folders",
+                 fail: profiles != Set(GuestProfile.allCases) || discovered.count != 3)
+            let id = String(repeating: "a", count: 32)
+            let dataFolder = tmp.appendingPathComponent(".ubuntu-data/" + id)
+            try? FileManager.default.createDirectory(at: dataFolder, withIntermediateDirectories: true)
+            let image = dataFolder.appendingPathComponent("data.img")
+            FileManager.default.createFile(atPath: image.path, contents: Data())
+            _ = truncate(image.path, 4 << 30)
+            let personal: [String: Any] = ["schema": 1, "id": id, "name": "Personal", "size_gb": 4,
+                                           "initialized": true, "attached_vm": UbuntuPersonalData.canonical(config.folder)]
+            try? JSONSerialization.data(withJSONObject: personal).write(to: dataFolder.appendingPathComponent("volume.json"))
+            let binding: [String: Any] = ["schema": 1, "id": id, "ready": true, "folders": ["Projects", "Documents"]]
+            try? JSONSerialization.data(withJSONObject: binding).write(to: config.folder.appendingPathComponent("data-volume.json"))
+            let server = tmp.appendingPathComponent(".ubuntu-services/Files-preview")
+            try? FileManager.default.createDirectory(at: server, withIntermediateDirectories: true)
+            var sharedRecord = personal
+            sharedRecord["shared"] = true
+            sharedRecord["attached_vm"] = UbuntuPersonalData.canonical(server)
+            try? JSONSerialization.data(withJSONObject: sharedRecord).write(to: dataFolder.appendingPathComponent("volume.json"))
+            try? FileManager.default.removeItem(at: config.folder.appendingPathComponent("data-volume.json"))
+            let live: [String: Any] = ["schema": 1, "id": id, "server": UbuntuPersonalData.canonical(server), "nfs_port": 53234,
+                                      "clients": [UbuntuPersonalData.canonical(config.folder)]]
+            try? JSONSerialization.data(withJSONObject: live).write(to: dataFolder.appendingPathComponent("sharing.json"))
+            let links: [String: Any] = ["schema": 1, "folders": [["id": id, "port": 53235, "folder": "Personal-aaaaaa"]]]
+            try? JSONSerialization.data(withJSONObject: links).write(to: config.folder.appendingPathComponent("shared-folders.json"))
+            let networkFile = config.folder.appendingPathComponent(DeveloperNetwork.file)
+            let savedFast = try? Data(contentsOf: config.folder.appendingPathComponent("fast-network"))
+            try? FileManager.default.removeItem(at: config.folder.appendingPathComponent("fast-network"))
+            var network = DeveloperNetwork()
+            network.sshLAN = true
+            network.ports = [DeveloperPort(host: 3000, guest: 3000, lan: true), DeveloperPort(host: 8080, guest: 80)]
+            try? JSONEncoder().encode(network).write(to: networkFile)
+            sheet("sheet-developer-network") { DeveloperSettingsView(state: state, config: config) }
+            try? FileManager.default.removeItem(at: networkFile)
+            if let savedFast { try? savedFast.write(to: config.folder.appendingPathComponent("fast-network")) }
+            sheet("sheet-developer-create") { NewDeveloperEnvironmentView(root: tmp) }
+            sheet("sheet-ubuntu-gesture-permissions") { UbuntuGesturesPermissions() }
+            sheet("sheet-ubuntu-project") { AddUbuntuProjectView(vms: [config]) { _ in } }
+            sheet("sheet-ubuntu-editor") { UbuntuEditorSettingsView() }
+            sheet("sheet-ubuntu-ports") { UbuntuPortsView(state: state, config: config) }
+            sheet("sheet-ubuntu-data") { UbuntuDataView(config: config) }
+            sheet("sheet-ubuntu-snapshots") {
+                UbuntuSnapshotsView(config: config, previewRows: [
+                    UbuntuCheckpoint(id: "experiment123", parent: "base456", label: "Working experiment", vmName: "Ubuntu-branch", createdAt: "2026-11-10 12:00 UTC"),
+                    UbuntuCheckpoint(id: "base456", parent: nil, label: "Clean development setup", vmName: "Ubuntu", createdAt: "2026-11-09 12:00 UTC")
+                ])
+            }
+            picture("screen-ubuntu-home", into: dirURL, each: { _ in
+                if LayoutProbe.frames["home-vm-\(config.id)"] == nil { note("Ubuntu home is missing its VM card", fail: true) }
+            }) { UbuntuHomeView(state: state, fixtures: [config]) }
+            sides("screen-ubuntu-home", height: smallHeight)
+            let project = UbuntuProject(name: "Example project", vmFolder: config.folder.path, linuxPath: "/home/ubuntu/Projects/example", lastOpened: Date())
+            picture("screen-ubuntu-projects", into: dirURL) { UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project]) }
+            sides("screen-ubuntu-projects", height: smallHeight)
+            picture("screen-workbench-wide", into: dirURL, width: 1000) {
+                UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project], previewSection: "Overview")
+            }
+            let previousRunning = state.vmRunning
+            state.vmRunning = { true }
+            picture("screen-workbench-running", into: dirURL, width: 1000) {
+                UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project], previewSection: "Overview", previewRunning: true)
+            }
+            state.vmRunning = previousRunning
+            for section in ["Resources", "Input", "Connections", "Files"] {
+                picture("screen-workbench-" + section.replacingOccurrences(of: " & ", with: "-").lowercased(), into: dirURL) {
+                    UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project], previewSection: section)
+                }
+            }
+        }
         usbPictures(folder: folder, into: dir)
         sheet("sheet-8-icon-looks") { AppIconPicker(selected: IconTheme.all[0]) { _ in } }
         // The (i) of Ghostty on the Mac's GPU, as its popover shows it (InfoButton).
@@ -428,6 +539,43 @@ enum RenderVMWindow {
 
     // MARK: Pictures
 
+    /// Mission Control's row in Input with its picture: off (its text beside
+    /// the picture), on, and on an Omarchy below 4.5 (greyed out, the longer
+    /// note). Its picture starts where Swipe out's does, the row above it;
+    /// and the picture on its own, light and dark.
+    private static func missionControlPictures(_ state: AppState, _ usual: Preview) {
+        let original = state.config
+        state.config.guest = .omarchy
+        defer { state.config = original }
+        let folder = state.config.folder
+        let features = folder.appendingPathComponent("features"), omarchy = folder.appendingPathComponent("omarchy")
+        let savedFeatures = try? Data(contentsOf: features), savedOmarchy = try? Data(contentsOf: omarchy)
+        func put(_ data: Data?, _ url: URL) {
+            if let data { try? data.write(to: url) } else { try? FileManager.default.removeItem(at: url) }
+        }
+        var p = usual
+        p.section = "input"
+        func lineUp(_ name: String) -> (Bool) -> Void {
+            { dark in
+                guard let swipe = LayoutProbe.frames["trailing-swipe-out"], let mc = LayoutProbe.frames["trailing-mission-control"] else {
+                    note("\(name): Swipe out's or Mission Control's row is missing\(dark ? " (dark)" : "")", fail: true)
+                    return
+                }
+                if abs(swipe.minX - mc.minX) > WindowLayout.tolerance {
+                    note("\(name): Swipe out's and Mission Control's pictures do not line up (\(Int(swipe.minX)) and \(Int(mc.minX)))", fail: true)
+                }
+            }
+        }
+        window("window-30-mission-control", state, p, each: lineUp("window-30-mission-control"))
+        try? Data("\(MissionControl.feature)=on\n".utf8).write(to: features)
+        window("window-31-mission-control-on", state, p, each: lineUp("window-31-mission-control-on"))
+        put(savedFeatures, features)
+        try? Data("4.0.3 omarchy-mac stable\n".utf8).write(to: omarchy)
+        window("window-32-mission-control-40", state, p, each: lineUp("window-32-mission-control-40"))
+        put(savedOmarchy, omarchy)
+        sheet("picture-1-mission-control") { MissionControlPicture().padding(12) }
+    }
+
     /// The window as the app makes it (main.swift), never on screen, at the
     /// 13-inch MacBook Air's height; checks that every part is inside it and
     /// the rows' controls end on one line.
@@ -439,13 +587,13 @@ enum RenderVMWindow {
 
     /// The window with this content, light and dark (the frames of the dark one stay in LayoutProbe).
     /// `each` looks at LayoutProbe's frames of each, light then dark.
-    static func picture<V: View>(_ name: String, into dir: URL, height: Double = smallHeight,
+    static func picture<V: View>(_ name: String, into dir: URL, height: Double = smallHeight, width: Double = Double(WindowSize.width),
                                  each: ((_ dark: Bool) -> Void)? = nil, _ root: () -> V) {
         for dark in [false, true] {
             LayoutProbe.frames = [:]
             let w = PictureWindow.make(root().environment(\.controlActiveState, .key))
             w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-            w.setContentSize(NSSize(width: WindowSize.width, height: height))
+            w.setContentSize(NSSize(width: width, height: height))
             settle(w)
             if let frame = w.contentView?.superview { WindowPicture.write(frame, "\(name)\(dark ? "-dark" : "")", into: dir) }
             each?(dark)
@@ -640,16 +788,18 @@ enum RenderVMWindow {
 
     /// A VM folder as a build leaves it: vm.env, a 64 GB sparse disk.img,
     /// efi-vars.fd, the ready mark.
-    private static func makeVM(_ folder: URL, name: String = "Omarchy") -> VMConfig? {
+    private static func makeVM(_ folder: URL, name: String = Product.guestName) -> VMConfig? {
         let fm = FileManager.default
         do {
             try fm.createDirectory(at: folder.appendingPathComponent("logs"), withIntermediateDirectories: true)
             // Balanced on this Mac: the usual choice.
             let t = Mac.tier(1)
-            try "NAME='\(name)'\nCPUS=\(t.cpus)\nMEM_MB=\(t.memoryGB * 1024)\nDISK_GB=64\nSSH_PORT=52222\nVM_USER=omarchy\n"
+            let user = Product.isUbuntu ? "ubuntu" : "omarchy"
+            try "NAME='\(name)'\nCPUS=\(t.cpus)\nMEM_MB=\(t.memoryGB * 1024)\nDISK_GB=64\nSSH_PORT=52222\nVM_USER=\(user)\n"
                 .write(to: folder.appendingPathComponent("vm.env"), atomically: true, encoding: .utf8)
             fm.createFile(atPath: folder.appendingPathComponent("efi-vars.fd").path, contents: Data())
             fm.createFile(atPath: folder.appendingPathComponent("ready").path, contents: Data())
+            if Product.isUbuntu { try "ubuntu\n".write(to: folder.appendingPathComponent("guest-os"), atomically: true, encoding: .utf8) }
             let disk = folder.appendingPathComponent("disk.img")
             fm.createFile(atPath: disk.path, contents: Data(count: 8 << 20))
             guard truncate(disk.path, 64 << 30) == 0 else { return nil }

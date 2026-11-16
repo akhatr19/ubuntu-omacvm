@@ -32,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(1)
             }
         }
+        if let i = args.firstIndex(of: "--test-run-vm"), i + 1 < args.count, TestIdentity.isOn {
+            NativeVMTest.run(folder: URL(fileURLWithPath: args[i + 1]))
+        }
         // Test builds: pictures of the update UI (RenderUpdateUI.swift).
         if let i = args.firstIndex(of: "--render-update-ui"), i + 1 < args.count,
            TestHooks.allowed(bundleID: Bundle.main.bundleIdentifier) {
@@ -43,6 +46,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            RenderVMWindow.allowed(bundleID: Bundle.main.bundleIdentifier) {
             buildMenu()
             RenderVMWindow.run(into: URL(fileURLWithPath: args[i + 1]))
+        }
+        // A download/build is only an installer. Do not hand over to an older
+        // running copy or start background VM/update work from this bundle.
+        if Product.isUbuntu && !Installer.isInstalled {
+            buildMenu()
+            showWindow()
+            return
         }
         // Started by update-swap.sh after an update: check that this build
         // works (else the previous version goes back), then start as usual.
@@ -99,7 +109,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DistributedNotificationCenter.default().postNotificationName(
                     Self.startRequest, object: vm, userInfo: nil, deliverImmediately: true)
             }
-            (Self.qemuApp ?? other).activate()
+            if Product.isUbuntu && !args.contains("--start") {
+                DistributedNotificationCenter.default().postNotificationName(Self.launcherRequest, object: nil, userInfo: nil, deliverImmediately: true)
+                other.activate()
+            } else { (Self.qemuApp ?? other).activate() }
             NSApp.terminate(nil)
             return
         }
@@ -107,6 +120,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: Self.startRequest, object: nil, queue: .main) { [weak self] note in
             let name = note.object as? String ?? ""
             MainActor.assumeIsolated { self?.startRequested(name) }
+        }
+        DistributedNotificationCenter.default().addObserver(forName: Self.launcherRequest, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.state.showHome = true; self?.showWindow() }
         }
         // The built-in display's notch, kept for VM starts with the lid closed
         // (#716): now, and whenever the displays change (the lid opened while
@@ -153,6 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The control centre's Mac jobs run this app's omacvm when there is no checkout.
         ControlCLI.refresh()
         state.startVM = { [weak self] in self?.startVM() }
+        state.startVMUnasked = { [weak self] in self?.startVM(personAsked: false) }
         state.checkForUpdates = { [weak self] in self?.checkForUpdates(nil) }
         state.showVM = { Self.qemuApp?.activate() }
         state.powerDownVM = { [weak self] in self?.runner?.powerDown() }
@@ -187,6 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Update with a VM restart (Updater.swift): the launcher's VM and its controls.
         let u = Updater.shared
+        u.qemuPID = { Self.qemuApp?.processIdentifier }
         u.runningVM = { [weak self] in
             guard let r = self?.runner, r.isRunning else { return nil }
             return (r.config.folder, r.config.name)
@@ -246,7 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let c = VMConfig.load(from: folder), c.isReady {
             state.config = c
             state.screen = .ready
-            startVM()
+            startVM(personAsked: false)
         } else if let drive = Storage.missingDrive(for: folder) {
             state.message = Storage.driveGoneText(drive)
             showWindow()
@@ -258,6 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Per bundle id: a test build (build-app.sh --id) does not take the
     /// installed app's start requests.
+    static let launcherRequest = Notification.Name("\(Bundle.main.bundleIdentifier ?? "org.omacvm.app").launcher")
     static let startRequest = Notification.Name("\(Bundle.main.bundleIdentifier ?? "org.omacvm.app").start")
     static let updateRequest = Notification.Name("\(Bundle.main.bundleIdentifier ?? "org.omacvm.app").update-now")
     static let restartRequest = Notification.Name("\(Bundle.main.bundleIdentifier ?? "org.omacvm.app").update-restart")
@@ -378,7 +397,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if runner?.isRunning == true { Self.qemuApp?.activate() } else { showWindow() }
+        if Product.isUbuntu { state.showHome = true; showWindow() }
+        else if runner?.isRunning == true { Self.qemuApp?.activate() } else { showWindow() }
         return true
     }
 
@@ -407,7 +427,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (WindowSize.defaultHeight), centred on the built-in display. Left where the user put it (and as tall) while it stays
         // open, sits in the Dock, or the app was hidden (Cmd-H).
         if let w = window, let c = centring, c.needsPlace, !w.isMiniaturized {
-            w.setContentSize(NSSize(width: WindowSize.width, height: Self.defaultHeight))
+            w.setContentSize(NSSize(width: Self.initialWindowWidth, height: Self.defaultHeight))
             c.place()
         }
         window?.makeKeyAndOrderFront(nil)
@@ -417,11 +437,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The app's window (docs/design/settings-3.1): 800 pt wide, only the
     /// height changes; the header sits under a transparent title bar, and an
     /// empty unified toolbar gives the window's buttons the header's height.
+    private static var initialWindowWidth: CGFloat { Product.isUbuntu && Installer.isInstalled ? 1000 : CGFloat(WindowSize.width) }
+
     static func makeWindow<V: View>(_ root: V) -> NSWindow {
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: WindowSize.width, height: defaultHeight),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: initialWindowWidth, height: defaultHeight),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                          backing: .buffered, defer: false)
-        w.title = Product.name
+        w.title = Product.name + (Product.isUbuntu ? " · " + Product.buildLabel : "")
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
         let bar = NSToolbar(identifier: "OmacVM.window")
@@ -430,12 +452,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         w.toolbarStyle = .unified
         w.collectionBehavior.insert(.fullScreenNone)
         w.contentMinSize = NSSize(width: WindowSize.width, height: WindowSize.minHeight)
-        w.contentMaxSize = NSSize(width: WindowSize.width, height: 100_000)
+        w.contentMaxSize = NSSize(width: Product.isUbuntu && Installer.isInstalled ? 1600 : WindowSize.width, height: 100_000)
         w.delegate = FixedWidthWindow.shared
         let host = NSHostingController(rootView: root)
         host.sizingOptions = []
         w.contentViewController = host
-        w.setContentSize(NSSize(width: WindowSize.width, height: defaultHeight))
+        w.setContentSize(NSSize(width: initialWindowWidth, height: defaultHeight))
         w.isReleasedWhenClosed = false
         w.isRestorable = false
         return w
@@ -451,6 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         static let shared = FixedWidthWindow()
 
         func windowDidResize(_ note: Notification) {
+            if Product.isUbuntu && Installer.isInstalled { return }
             guard let w = note.object as? NSWindow, abs(w.frame.width - WindowSize.width) > 0.5 else { return }
             let fixed = WindowSize.fixedWidth(x: w.frame.origin.x, width: w.frame.width)
             var f = w.frame
@@ -474,11 +497,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// after it: meanwhile a build, a move or another start may have begun.
     enum NetworkStart { case ask, helpersChecked, decided(String?) }
 
-    private func startVM(openGLOnce: String? = nil, network: NetworkStart = .ask) {
+    /// `personAsked`: the person asked for this start just now, so its
+    /// questions always take the keys. False for a start that comes by itself
+    /// (AskKeys): after an update, after Update VM, for a disk cut.
+    private func startVM(openGLOnce: String? = nil, network: NetworkStart = .ask, personAsked: Bool = true) {
+        guard !Product.isUbuntu || Installer.isInstalled else { showWindow(); return }
         // A build or an update runs the VM without a window: a second QEMU on
         // its disk (a start from the Dock or `omacvm start`) would corrupt it.
         if state.screen == .building {
             showWindow()
+            return
+        }
+        if Product.isUbuntu, DeveloperActions.name(state.config) != nil {
+            do { try DeveloperActions.open(state.config, "desktop") }
+            catch { state.say(error.localizedDescription) }
             return
         }
         // This app runs the VM already, or a start is on its way: that one goes on.
@@ -523,22 +555,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Not shut down cleanly, or copied while it ran (RunMarker): asked
         // first, once per start (.decided: the same start, continued).
         if case .ask = network {
-            guard RunMarker.confirmStart(state.config) else {
+            guard RunMarker.confirmStart(state.config, personAsked: personAsked) else {
                 showWindow()
                 return
             }
             // This Mac's helpers for the VM (a VM copied from another Mac):
             // said once per start, Update VM offered.
-            askMacHelpers { [weak self] go in
-                if go { self?.startVM(openGLOnce: openGLOnce, network: .helpersChecked) }
+            askMacHelpers(personAsked: personAsked) { [weak self] go in
+                if go { self?.startVM(openGLOnce: openGLOnce, network: .helpersChecked, personAsked: personAsked) }
             }
             return
         }
         // The fast network on, and its service not for this app (after an app
         // update): asked first, never a start that cannot work.
         guard case .decided(let userNetwork) = network else {
-            if FastNetwork.isOn(state.config) {
-                askFastNetwork { [weak self] why in self?.startVM(openGLOnce: openGLOnce, network: .decided(why)) }
+            if !state.config.isCustom && FastNetwork.isOn(state.config) {
+                askFastNetwork(personAsked: personAsked) { [weak self] why in self?.startVM(openGLOnce: openGLOnce, network: .decided(why)) }
             } else {
                 startVM(openGLOnce: openGLOnce, network: .decided(nil))
             }
@@ -600,7 +632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The guest shrank btrfs and shut down for the cut: start again
             // (startVM cuts first, then the guest checks the disk).
             if !self.quitting, VMDisk.resize(self.state.config)?.step == .cut {
-                self.startVM()
+                self.startVM(personAsked: false)
                 return
             }
             if self.quitting {
@@ -633,9 +665,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // launcher steps out of the Dock first. If QEMU came up while the
         // launcher still held the icon, the Dock gave QEMU a second one beside
         // a pinned OmacVM (MacBook Air, macOS 26.6.2).
-        window?.orderOut(nil)
-        centring?.taken()
-        NSApp.setActivationPolicy(.accessory)
+        if Product.isUbuntu {
+            state.showHome = true
+        } else {
+            window?.orderOut(nil)
+            centring?.taken()
+            NSApp.setActivationPolicy(.accessory)
+        }
         // Set before the start: r.start() waits on small helper processes,
         // which runs the main loop, so a QEMU that ends at once (its disk
         // locked elsewhere) has its exit handled before start() returns, and
@@ -659,7 +695,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// QEMU's user network this time and says so. `done` gets why the start
     /// takes the user network, nil when the service is fine.
     private var askingFastNetwork = false
-    private func askFastNetwork(_ done: @escaping (String?) -> Void) {
+    private func askFastNetwork(personAsked: Bool, _ done: @escaping (String?) -> Void) {
         guard !askingFastNetwork else { return }   // a second start while asking: the first one starts
         askingFastNetwork = true
         let finish: (String?) -> Void = { [weak self] why in
@@ -688,7 +724,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         + "Or start on the normal network (QEMU's own) this time; the fast network stays on for the next starts."
                     a.addButton(withTitle: need.button)
                     a.addButton(withTitle: "Start on Normal Network")
-                    NSApp.activate()
+                    AskKeys.take(a.window, personAsked: personAsked)
+                    // Comes after a look at the service, and Return updates it.
+                    AskKeys.hold(a)
                     update = a.runModal() == .alertFirstButtonReturn
                 }
                 guard update else { finish(FastNetwork.notUpdated("you chose the normal network for this start")); return }
@@ -701,7 +739,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             b.messageText = "The fast network was not updated"
                             b.informativeText = "\(err)\n\nThe VM starts on the normal network (QEMU's own) this time."
                             b.addButton(withTitle: "Start")
-                            NSApp.activate()
+                            AskKeys.take(b.window, personAsked: personAsked)
                             b.runModal()
                         }
                         finish(FastNetwork.notUpdated(err))
@@ -724,7 +762,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var askingHelpers = false
     /// For qemu.log ("OmacVM: Mac helpers: ..."): what the look said and what was asked.
     private var helpersNote: String?
-    private func askMacHelpers(_ done: @escaping (Bool) -> Void) {
+    private func askMacHelpers(personAsked: Bool, _ done: @escaping (Bool) -> Void) {
+        guard state.config.guest.integrated else { done(true); return }
         askingHelpers = true
         helpersNote = nil
         let c = state.config
@@ -789,7 +828,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     } else if hidden {
                         go("no (no window to ask in)"); return
                     } else {
-                        answer = s.ask(vm: c.name)
+                        answer = s.ask(vm: c.name, personAsked: personAsked)
                         if overtaken() { return }
                     }
                     if answer == .later {
@@ -818,7 +857,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.messageText = Graphics.didNotStartOnMac
             alert.informativeText = text
             alert.addButton(withTitle: "OK")
-            NSApp.activate()
+            AskKeys.take(alert.window, overVM: Self.qemuApp?.processIdentifier)
             alert.runModal()
             Self.qemuApp?.activate()
         }
@@ -923,12 +962,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func showWorkbench(_ sender: Any?) {
+        state.showHome = true
+        showWindow()
+    }
+
     func buildMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
         appMenu.delegate = self
+        if Product.isUbuntu { appMenu.addItem(withTitle: "Show Workbench", action: #selector(showWorkbench(_:)), keyEquivalent: "1") }
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
         let back = appMenu.addItem(withTitle: "Go Back…", action: #selector(goBack(_:)), keyEquivalent: "")
         back.tag = Self.goBackTag

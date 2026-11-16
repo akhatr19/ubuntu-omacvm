@@ -1,5 +1,5 @@
 # Shared helpers for build.sh and apply.sh (sourced, Mac side).
-log() { printf '\033[1;32m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
+log() { OMA_LAST=$*; printf '\033[1;32m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 # python3 and the Swift answers without Xcode's Command Line Tools (src/lib/tools.sh).
@@ -73,7 +73,7 @@ helper_pid() {
     bridge-test) exe="OmacVM Test Bridge\.app/Contents/MacOS/" ;;
     gestures-test) exe="OmacVM Test Gestures\.app/Contents/MacOS/" ;;
     bridge-) exe="OmacVMBridge\.app/Contents/MacOS/omacvm-bridge" ;;
-    gestures-) exe="OmacVMGestures\.app/Contents/MacOS/omacvm-gestures" ;;
+    gestures-) exe="OmacVMGestures\.app/Contents/MacOS/omacvm-gestures|UbuntuVMGestures\.app/Contents/MacOS/omacvm-gestures" ;;
     *) return 1 ;;
   esac
   LC_ALL=C pgrep -a -o -u "$(id -u)" -f "$exe"   # bytes: in UTF-8, pgrep -f fails on any line that is not UTF-8 (#545)

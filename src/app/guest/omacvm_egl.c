@@ -503,7 +503,8 @@ static const char *program(char *exe, size_t size)
 static int desktop_process(const char *b)
 {
     return !strcmp(b, "Hyprland") || !strcmp(b, "Xwayland") || !strcmp(b, "quickshell") ||
-           !strcmp(b, "hyprlock") || !strncmp(b, "sddm-greeter", 12);
+           !strcmp(b, "hyprlock") || !strncmp(b, "sddm-greeter", 12) ||
+           !strcmp(b, "gnome-shell");
 }
 
 __attribute__((visibility("default")))

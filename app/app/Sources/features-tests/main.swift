@@ -1,5 +1,5 @@
 // The features a new OmacVM.app VM starts with (OmacVMFeatures), the
-// hidden keyboard sharing switch (ShareKeyboardTests.swift) and whether this
+// hidden keyboard sharing switch and the ISO keyboard (ShareKeyboardTests.swift) and whether this
 // Mac is set up for a VM (MacSetupTests.swift), without a VM:
 //   cd app/app && swift run features-tests
 // Exit 0 when all pass. CI runs it on every pull request.
@@ -279,6 +279,7 @@ if let d = UserDefaults(suiteName: "org.omacvm.test.features-menubar.\(getpid())
 }
 
 shareKeyboardTests()
+isoKeyboardTests()
 macSetupTests()
 
 // WebGPU and GPU compute (gpu-compute): on by default, also for a record without the word.
@@ -314,5 +315,56 @@ expect(GPUCompute.switchState.prepareStart(folder: gdir) == false &&
        "gpu-compute prepareStart: the pending off, the record follows")
 try? FileManager.default.removeItem(at: gdir)
 
+// Mission Control (mission-control): off unless the record says on; Omarchy 4.5 and Trackpad gestures.
+expect(!MissionControl.isOn(features: nil) && !MissionControl.isOn(features: "bridge=on") &&
+       MissionControl.isOn(features: "gestures=on mission-control=on"), "mission-control: off without the record's word")
+expect(notch["mission-control"] == nil && noNotch["mission-control"] == nil, "a new VM starts without mission-control (off by default)")
+if let text = try? String(contentsOf: tsv, encoding: .utf8),
+   let row = text.split(separator: "\n").first(where: { $0.hasPrefix("mission-control\t") }) {
+    let f = row.split(separator: "\t", omittingEmptySubsequences: false)
+    expect(f.count >= 5 && f[1] == "off" && f[2] == "vm" && f[3] == "omarchy-45" && f[4] == "gestures",
+           "mission-control in src/features.tsv: off, vm, omarchy-45 (not experimental), needs gestures")
+} else {
+    expect(false, "mission-control in src/features.tsv")
+}
+// The 4.5 rule: the same answers as src/lib/features.sh and the control centre (test_state.py).
+for (rec, below) in [("4.5.0 aarch64 stable\n", false), ("5.0", false), ("4.10.1", false), ("4.0.3 omarchy-mac stable", true),
+                     ("4", true), ("x", true), ("none\n", false), ("", false), ("4.5;rm", false)] {
+    expect(MissionControl.omarchyBelow45(record: rec) == below, "mission-control: omarchy record '\(rec.trimmingCharacters(in: .whitespacesAndNewlines))' below 4.5: \(below)")
+}
+expect(!MissionControl.omarchyBelow45(record: nil), "mission-control: no omarchy record yet: the VM decides")
+let mc40 = MissionControl.row(record: nil, pending: nil, omarchy: "4.0.3 omarchy-mac stable", gesturesOff: false, running: true, busy: false, cli: true)
+expect(mc40 == MacIME.Row(on: false, enabled: false, note: MissionControl.needs45), "mission-control row on 4.0: off, greyed out, says Move to 4.5")
+let mcNoG = MissionControl.row(record: "gestures=off", pending: nil, omarchy: "4.5.0", gesturesOff: true, running: false, busy: false, cli: true)
+expect(mcNoG == MacIME.Row(on: false, enabled: false, note: MissionControl.needsGestures), "mission-control row, gestures off: greyed out, says so")
+let mcOn = MissionControl.row(record: "mission-control=on", pending: nil, omarchy: "4.5.0", gesturesOff: false, running: true, busy: false, cli: true)
+expect(mcOn == MacIME.Row(on: true, enabled: true, note: MissionControl.onNote), "mission-control row on, running: switchable, says how")
+expect(MissionControl.row(record: "mission-control=on", pending: nil, omarchy: "4.0.3", gesturesOff: true, running: true, busy: false, cli: true).enabled,
+       "mission-control row: one that is on can always go off")
+expect(MissionControl.row(record: nil, pending: nil, omarchy: nil, gesturesOff: false, running: false, busy: false, cli: false)
+       == MacIME.Row(on: false, enabled: true, note: nil), "mission-control row stopped: switched for the next start")
+expect(!MissionControl.row(record: nil, pending: nil, omarchy: nil, gesturesOff: false, running: true, busy: true, cli: true).enabled &&
+       !MissionControl.row(record: nil, pending: nil, omarchy: nil, gesturesOff: false, running: true, busy: false, cli: false).enabled,
+       "mission-control row: busy or no CLI: not switchable")
+let ms1 = MissionControl.switchState.switchStopped(record: "bridge=on\n", pending: nil, on: true)
+expect(MissionControl.isOn(features: ms1.record) && ms1.pending == "on\n" && MissionControl.switchState.pendingFile == "mission-control-pending",
+       "mission-control stopped, on: the record says on, pending on")
+expect(MissionControl.switchState.applyArguments(vm: "V", on: true) == ["apply", "--vm", "V", "--vm-type", "app", "--feature", "mission-control=on", "--yes", "--transaction"],
+       "mission-control at the start: apply's switch of it alone")
+expect(!MissionControl.info.lowercased().contains("experimental") && MissionControl.info.contains("Gilles Goetsch (MIT)") &&
+       !MissionControl.info.contains("Mission Control key") && !MissionControl.info.contains("F3"),
+       "mission-control (i): not experimental, credits the plugin, never the Mission Control key")
+expect(!MissionControl.subtitle.lowercased().contains("xperimental") && MissionControl.subtitle.count <= 80 &&
+       ![MissionControl.needs45, MissionControl.needsGestures, MissionControl.onNote].contains(MissionControl.subtitle),
+       "mission-control row text beside the picture: short, not experimental, none of the notes")
+
+let catalog = "bridge\ton\nomanotch\tnotch\nbattery\tlaptop\ncamera\ton\nmac-ime\toff\nmission-control\toff\ngpu-compute\ton\ndrag-drop\toff"
+let omarchyProfile = parse(GuestProfile.omarchy.defaults(catalog: catalog, hasBattery: true, hasNotch: true))
+let ubuntuProfile = parse(GuestProfile.ubuntu.defaults(catalog: catalog, hasBattery: false, hasNotch: true))
+let customProfile = parse(GuestProfile.custom.defaults(catalog: catalog, hasBattery: true, hasNotch: true))
+expect(omarchyProfile["bridge"] == "on" && omarchyProfile["omanotch"] == "on" && omarchyProfile["battery"] == "on", "Omarchy defaults follow the upstream catalog and host hardware")
+expect(omarchyProfile["mac-ime"] == "off" && omarchyProfile["mission-control"] == "off", "optional Omarchy integrations remain available but off by default")
+expect(ubuntuProfile["bridge"] == "off" && ubuntuProfile["omanotch"] == "off" && ubuntuProfile["drag-drop"] == "on" && ubuntuProfile["battery"] == "off", "Ubuntu selects its supported integrations independently")
+expect(customProfile.values.allSatisfy { $0 == "off" }, "custom ISOs receive no Mac integrations")
 print(failures == 0 ? "all passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)

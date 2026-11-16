@@ -22,6 +22,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 source "$HERE/vm-common.sh"
 
 vm_load "${1:?usage: update-vm.sh VM_DIR}"
+shift
+apply_args=("$@")
 [[ -f $VM_DIR/disk.img && -f $VM_DIR/efi-vars.fd && -e $VM_DIR/ready ]] || die "$NAME is not a finished VM"
 # QEMU names the disk on its command line: one that runs from here or from the
 # command line (omacvm start) must not get a second QEMU on the same disk.
@@ -143,8 +145,12 @@ if grep -qw 'thp-kernel=on' <<<"$kfeats" &&
 fi
 exec 3<&-
 
-step 2 "Updating OmacVM in the VM and on the Mac"
-run_logged "$LOG/omacvm-update.log" "$HERE/apply-vm.sh" "$VM_DIR" ||
+if [[ $(cat "$VM_DIR/guest-os" 2>/dev/null) == ubuntu ]]; then
+  step 2 "Updating UbuntuVM guest integrations"
+else
+  step 2 "Updating OmacVM in the VM and on the Mac"
+fi
+run_logged "$LOG/omacvm-update.log" "$HERE/apply-vm.sh" "$VM_DIR" ${apply_args[@]+"${apply_args[@]}"} ||
   die "$(stopped_why "OmacVM did not update (log: $LOG/omacvm-update.log); the VM starts as before")"
 [[ -s $REASON ]] && die "$(stopped_why "")"
 

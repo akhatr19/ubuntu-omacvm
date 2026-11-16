@@ -98,6 +98,11 @@ install_app() {
   local name=$1 label=$2 dir=$3 bundle=${4:-}; shift 3; (( $# )) && shift
   local sum pre="" before
   [[ -n $bundle ]] && pre=$(helpers_prebuilt "$R" "$dir" "$bundle")
+  local installed_bundle=$bundle
+  if [[ $dir == gestures/mac && -n $pre && $(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$pre/Contents/Info.plist" 2>/dev/null) == 'UbuntuVM Gestures' ]]; then
+    installed_bundle=UbuntuVMGestures.app
+    set -- --app-name "$installed_bundle" "$@"
+  fi
   # Paths relative to src/, so another copy of the same OmacVM matches too.
   # The prebuilt copy's signature counts too: from built here to the app's
   # signed copy is a change. In the C locale: the order of the names must not
@@ -128,7 +133,7 @@ install_app() {
     return 0
   fi
   printf '\033[1;32m==>\033[0m \033[1m%s on the Mac\033[0m%s\n' "$name" "${pre:+ (signed, from OmacVM.app)}"
-  [[ -n $bundle ]] && before=$(helpers_team "$HOME/Applications/$bundle")
+  [[ -n $bundle ]] && before=$(helpers_team "$HOME/Applications/$installed_bundle")
   # Each app's install.sh builds before it replaces anything: one that fails
   # leaves the installed one running.
   local ok=1
@@ -144,7 +149,7 @@ install_app() {
   # signature (built here -> OmacVM's Developer ID) is new to macOS too: it
   # asks once more, then keeps the grants across updates.
   if [[ ! -e $STAMPS/$name ]]; then INSTALLED+=("$name")
-  elif [[ -n $bundle && -n $before && $before != "$(helpers_team "$HOME/Applications/$bundle")" ]]; then
+  elif [[ -n $bundle && -n $before && $before != "$(helpers_team "$HOME/Applications/$installed_bundle")" ]]; then
     INSTALLED+=("$name"); RESIGNED=1
   fi
   echo "$sum" > "$STAMPS/$name"

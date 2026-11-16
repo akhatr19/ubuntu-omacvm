@@ -18,6 +18,8 @@ import OmacVMWindow
 final class Runner {
     let config: VMConfig
     private(set) var process: Process?
+    private var personalDataArguments: [String] = []
+    private var sharedFolderArguments: [String] = []
     private let sleep = VMHostSleepCoordinator()
     private var gpuMemory: GPUMemoryWatch?
     private var featuresRoute: ControlCentreRoute?
@@ -100,6 +102,7 @@ final class Runner {
             "-monitor", "none",
             "-qmp", "unix:\(q(c.qmpSocket.path)),server=on,wait=off",
         ]
+        if c.isCustom { return CustomISO.arguments(c, base: a) }
         // This runtime shows a Vulkan window Hyprland imports (virgl-set-type-without-egl.patch),
         // with MoltenVK and with KosmicKrisp: the guest then keeps Mesa's normal Vulkan present,
         // not the software copy (omacvm-vulkan-present); the Mac copies each frame into GL.
@@ -231,6 +234,8 @@ final class Runner {
         // moves no other device (the VM finds it by its tag, wherever it is).
         let share = MacFolder.plan(c)
         macFolder = share.record
+        a += sharedFolderArguments
+        a += personalDataArguments
         a += share.arguments
         // Drag and drop (drag-drop on only; docs/drag-and-drop.md): its port
         // and the read-only drop share after everything, the Mac folder too,
@@ -408,6 +413,9 @@ final class Runner {
 
     private func networkArguments() -> [String] {
         let c = config
+        if c.isCustom {
+            return ["-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0,romfile="]
+        }
         let choice = FastNetwork.choose(for: c, userNetwork: userNetwork)
         network = choice
         if choice.vmnet {
@@ -419,12 +427,23 @@ final class Runner {
                     "-device", "virtio-net-pci,id=nic0,netdev=fast,mac=\(choice.mac),romfile="]
         }
         // QEMU's user network: the Mac is 10.0.2.2 for the VM; SSH from the Mac on 127.0.0.1.
-        return ["-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:\(c.sshPort)-:22",
+        let published = (try? UbuntuNetworking.read(c))?.ports.map(\.qemu) ?? []
+        return ["-netdev", (["user,id=net0", "hostfwd=tcp:127.0.0.1:\(c.sshPort)-:22"] + published).joined(separator: ","),
                 "-device", "virtio-net-pci,netdev=net0,mac=\(choice.mac),romfile="]
     }
 
     func start() throws {
         let c = config
+        var dataLock: Int32 = -1
+        if c.guest.integrated {
+            _ = try UbuntuNetworking.read(c)
+            if c.isUbuntu {
+                (dataLock, personalDataArguments) = try UbuntuPersonalData.start(c)
+                sharedFolderArguments = try UbuntuSharedFolders.arguments(c)
+            }
+            sharedFolderArguments += try UbuntuHomeFolders.arguments(c)
+        }
+        defer { if dataLock >= 0 { close(dataLock) } }
         startAudioThread = Settings.audioThread
         (audioDeviceStart, audioFramesStart) = AudioLatencyWatch.outputNow()
         try FileManager.default.createDirectory(at: c.folder.appendingPathComponent("logs"),
@@ -445,6 +464,8 @@ final class Runner {
         let gpuComputePending = GPUCompute.switchState.prepareStart(folder: c.folder)
         // Drag and drop switched in the window while it was stopped: the same way.
         let dropPending = DragDrop.switchState.prepareStart(folder: c.folder)
+        // Mission Control switched in the window while it was stopped: the same way.
+        let missionControlPending = MissionControl.switchState.prepareStart(folder: c.folder)
         // What of the Mac this start may use (its features), read once.
         links = MacLinks.load(folder: c.folder)
         // The strip beside the notch (NotchArea, #339): FullPanel only with the
@@ -495,7 +516,8 @@ final class Runner {
         defer { if !qemuRuns { drop?.stop(); drop = nil; dropPeer = nil } }
         p.arguments = arguments()
         var env = ProcessInfo.processInfo.environment
-        env["OMACVM_PRODUCT_NAME"] = Product.name
+        env["OMACVM_PRODUCT_NAME"] = Product.isUbuntu ? "UbuntuVM Desktop" : Product.name
+        if Product.isUbuntu { env["OMACVM_DOCK_SEPARATE"] = "1" }
         // QEMU's FullPanel (omacvm-cocoa-fullpanel.patch): only for this start.
         if notchStart.fullPanel { env["OMACVM_FULLPANEL"] = "1" } else { env.removeValue(forKey: "OMACVM_FULLPANEL") }
         // The panel its notch was measured on: a full screen entered on another
@@ -523,6 +545,8 @@ final class Runner {
         if !Settings.globeKeyToVM { env["OMACVM_GLOBE_KEY"] = "mac" }
         // Keyboard sharing apps see the keys before QEMU's tap (#350, omacvm-cocoa-keys-last.patch).
         ShareKeyboard.apply(Settings.shareKeyboard, to: &env)
+        // Apple ISO keyboards: the keys left of 1 and left of Z where Linux has them (#784).
+        ISOKeyboard.apply(ISOKeyboard.isISO, to: &env)
         // Closing the window (#358, org.omacvm.app closeAction; omacvm-cocoa-close.patch).
         env["OMACVM_CLOSE_ACTION"] = UserDefaults.standard.string(forKey: "closeAction") ?? "shutdown"
         // Video decoding on the Mac's media engine (H.264, VP9, HEVC). AV1 only for
@@ -543,7 +567,9 @@ final class Runner {
         }
         // "Features…" in QEMU's app menu asks this app to open the control
         // centre in the VM (ControlCentreRoute).
-        let route = ControlCentreRoute(agentPath: c.agentSocket.path, vmName: c.name) { [weak self] line in
+        let route = ControlCentreRoute(agentPath: c.agentSocket.path, vmName: c.name, ubuntu: c.isUbuntu, takeKeys: { [weak self] window in
+            AskKeys.take(window, overVM: self?.process?.processIdentifier)
+        }) { [weak self] line in
             self?.appendLog(line)
         }
         env["OMACVM_FEATURES_REQUEST"] = route.requestName
@@ -566,6 +592,10 @@ final class Runner {
         if usbOn { env["OMACVM_USB_REQUEST"] = USBRun.requestName() }
         // The VM's graphics memory on the Mac, for this app and omacvm check (GPUMemory).
         env["OMACVM_GPU_MEMORY_STATUS"] = GPUMemory.file(for: c).path
+        if (try? String(contentsOf: c.folder.appendingPathComponent("guest-os"), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) == "ubuntu" {
+            env["OMACVM_GPU_MEMORY_DESKTOP"] = "gnome-shell"
+        }
         try? FileManager.default.removeItem(at: GPUMemory.file(for: c))
         // QEMU's reclaim fix says there when macOS keeps the pages the VM gives
         // back (GPUMemoryWatch turns its give-back while macOS compresses off).
@@ -749,15 +779,28 @@ final class Runner {
         // Not in a hidden test run (OMACVM_COCOA_HIDDEN) and not for the test
         // identity (its grants are given once, by hand; tests run unattended):
         // no prompt there.
-        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined,
+        if !c.isCustom, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined,
            ProcessInfo.processInfo.environment["OMACVM_COCOA_HIDDEN"] == nil, !TestIdentity.isOn {
             AVCaptureDevice.requestAccess(for: .audio) { _ in }
         }
         try p.run()
         qemuRuns = true
         process = p
+        if c.guest.integrated {
+            UbuntuHomeFolders.status(c, pid: p.processIdentifier, message: "Waiting for the VM to connect shared home folders…")
+            if c.isUbuntu {
+                do { try UbuntuSharedFolders.watch(c, pid: p.processIdentifier) }
+                catch { appendLog("Shared folders: " + error.localizedDescription) }
+            }
+        }
         dropPeer?.set(p.processIdentifier)
         mark(pid: p.processIdentifier)
+        if c.isCustom {
+            startedAt = Date()
+            observeSleep()
+            Thread.detachNewThread { GuestAgent.hold(socketPath: c.agentSocket.path) }
+            return
+        }
         if usbOn {
             usb = USBRun(config: c, qemuPID: p.processIdentifier) { [weak self] line in self?.appendLog(line) }
         }
@@ -806,9 +849,23 @@ final class Runner {
         let agentDeadline = Date().addingTimeInterval(600)
         Thread.detachNewThread { [weak self] in
             GuestAgent.hold(socketPath: agentPath)
+            if c.guest.integrated, let error = UbuntuForkIdentity.prepare(c, agent: agentPath, pid: pid) {
+                Task { @MainActor in self?.appendLog("UbuntuVM: " + error) }
+                return
+            }
             let r = VMKey.ensure(folder: folder, agentPath: agentPath, pingWait: agentDeadline.timeIntervalSinceNow,
                                  running: { kill(pid, 0) == 0 })
             if let line = SSHRepair.logLine(r, stillRunning: kill(pid, 0) == 0) {
+                Task { @MainActor in self?.appendLog(line) }
+            }
+            if c.guest.integrated, kill(pid, 0) == 0,
+               let line = UbuntuHomeFolders.install(c, agent: agentPath, pid: pid, until: agentDeadline) {
+                Task { @MainActor in self?.appendLog(line) }
+            }
+            GuestSSHIdentity.remember(c, agent: agentPath, pid: pid)
+            if c.guest.integrated, kill(pid, 0) == 0,
+               let line = UbuntuNetworking.apply(c, agent: agentPath, qmp: c.qmpSocket.path) {
+                try? String(line.prefix(2048)).write(to: c.folder.appendingPathComponent("developer-network-status"), atomically: true, encoding: .utf8)
                 Task { @MainActor in self?.appendLog(line) }
             }
             if let on = imePending {
@@ -819,6 +876,12 @@ final class Runner {
             }
             if let on = dropPending {
                 FeatureStart.run(config: c, switch: DragDrop.switchState, what: "Drag and drop", on: on, agentPath: agentPath,
+                                 until: agentDeadline, running: { kill(pid, 0) == 0 }) { [weak self] line in
+                    Task { @MainActor in self?.appendLog(line) }
+                }
+            }
+            if let on = missionControlPending {
+                FeatureStart.run(config: c, switch: MissionControl.switchState, what: "Mission Control", on: on, agentPath: agentPath,
                                  until: agentDeadline, running: { kill(pid, 0) == 0 }) { [weak self] line in
                     Task { @MainActor in self?.appendLog(line) }
                 }
@@ -1413,6 +1476,7 @@ final class Runner {
         alert.informativeText = "It is paused. Resume it, or shut it down."
         alert.addButton(withTitle: "Resume")
         alert.addButton(withTitle: "Shut Down")
+        AskKeys.take(alert.window, overVM: process?.processIdentifier)
         let shutDown = alert.runModal() == .alertSecondButtonReturn
         resumeIfPaused()
         if shutDown { powerDown() } else { syncClock() }

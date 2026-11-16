@@ -27,9 +27,14 @@ fi
 # (guest/dkms.sh).
 say() { echo "camera: $*" >&2; }
 source ../../guest/dkms.sh
-../../guest/pkg-add python dkms
-kernel_headers linux-aarch64
-../../guest/pkg-add v4l2loopback-dkms
+if [[ -f /etc/debian_version ]]; then
+  dkms_tools v4l2loopback-dkms
+  kernel_headers linux-aarch64
+else
+  ../../guest/pkg-add python dkms
+  kernel_headers linux-aarch64
+  ../../guest/pkg-add v4l2loopback-dkms
+fi
 # Headers that came after the module (or a new kernel): build it for them too.
 [[ -n $(modinfo -k "$(uname -r)" -F filename v4l2loopback 2>/dev/null) ]] ||
   dkms autoinstall -k "$(uname -r)" >/dev/null 2>&1 || true

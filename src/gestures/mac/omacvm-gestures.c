@@ -343,12 +343,15 @@ static void retargetLocked(int states) {
 }
 
 // all: every client; else the front VM's.
+static double lastGestureForwarded;  // protected by sendLock; no input contents saved
 static void sendTo(int all, const char *line, size_t len) {
   pthread_mutex_lock(&sendLock);
   int dropped = 0;
   for (int i = 0; i < MAX_CLIENTS; i++) {
     if (clients[i].fd < 0 || (!all && !clients[i].target)) continue;
-    if (send(clients[i].fd, line, len, MSG_NOSIGNAL) < 0) {
+    ssize_t sent = send(clients[i].fd, line, len, MSG_NOSIGNAL);
+    if (sent == (ssize_t)len && len > 3 && line[0] == 'F' && line[1] == ' ' && line[2] >= '3' && line[2] <= '9') lastGestureForwarded = unixNow();
+    if (sent < 0) {
       logf_("guest disconnected: %s", clients[i].ip);
       closeClient(clients[i].fd); clients[i].fd = -1; dropped = 1;
     }
@@ -950,6 +953,8 @@ static void rearmTap(const char *why) {
 // that window's title, the window, and whether the app is one the escape
 // combo may go back to (other). Main thread.
 static void noteCameFrom(int changed);
+static int windowCapture(void);
+static int (*windowCaptureFn)(void) = windowCapture;
 static void frontChanged(pid_t pid, int net, int front, const char *title, CGWindowID win, int other) {
   // The last full-screen VM in front with no window on this Space (win 0):
   // still full screen, on its own Space, which is not shown. The combo goes
@@ -966,7 +971,8 @@ static void frontChanged(pid_t pid, int net, int front, const char *title, CGWin
   int qemuFront = net == NET_APP && (front || winVM);
   if (qemuFront && pid != tapVM) rearmTap(front ? "an OmacVM VM came to the front" : "an OmacVM VM window came to the front");
   tapVM = qemuFront ? pid : 0;
-  if (front) {
+  int captureFront = front || (winVM && win && windowCaptureFn());
+  if (captureFront) {
     pthread_mutex_lock(&sendLock);
     if (net != frontNet || strcmp(title, frontTitle)) {
       frontNet = net;
@@ -974,7 +980,7 @@ static void frontChanged(pid_t pid, int net, int front, const char *title, CGWin
       retargetLocked(capturing);
     }
     pthread_mutex_unlock(&sendLock);
-    vmPid = pid; vmWin = win;
+    if (front) { vmPid = pid; vmWin = win; }
   } else if (other) {
     otherPid = pid; otherWin = win;
   }
@@ -991,12 +997,12 @@ static void frontChanged(pid_t pid, int net, int front, const char *title, CGWin
   if (!front && escaped) escaped = 0;   // re-arm once the VM is left
   frontIsVM = front;
   // No capture without the tap and trackpads (a permission taken away).
-  int now = front && !escaped && !inputPaused;
+  int now = captureFront && !escaped && !inputPaused;
   if (now != capturing) {
     capturing = now;
-    logf_("capture %s", now ? "ON" : "off");
+    logf_("capture %s%s", now ? "ON" : "off", now ? " — return to macOS: Control+Option+Escape" : "");
     if (rec) fprintf(rec, "C\t%.4f\t%d\n", unixNow(), now);
-    sendState(now ? "on" : (front && !inputPaused ? "esc" : "off"));
+    sendState(now ? "on" : (captureFront && !inputPaused ? "esc" : "off"));
   }
   // Invalidated or disabled (by macOS or the watchdog): without the
   // permissions it goes (#192); a disabled one is removed, never enabled
@@ -1235,7 +1241,7 @@ static void updateCapture(CFRunLoopTimerRef t, void *info) {
   // Which of the app's VMs: its window title, on this check (every 0.2 s
   // while a VM app is full screen in front) and on every app switch.
   char title[sizeof frontTitle] = "";
-  if (front) windowTitle(pid, title, sizeof title);
+  if (front || (net == NET_APP && windowCapture())) windowTitle(pid, title, sizeof title);
   int other = isOther(pid, net, name, net < 0 && pid > 0 && ns_is_regular(pid));
   // A VM app not full screen: its window here, 0 when it shows none on this
   // Space (its full-screen VM on a Space not shown).
@@ -1807,6 +1813,7 @@ static CGEventRef dockSwipeEvent(int asHID, int phase, double progress, double s
     CGEventRef e = CGEventCreate(NULL);
     if (e) {
       CGEventSetType(e, (CGEventType)kCGSEventDockControl);
+      CGEventSetFlags(e, 0);  // never inherit the escape shortcut's held modifiers
       CGEventSetLocation(e, at);
       hidAttach(e, h);
     }
@@ -1835,6 +1842,8 @@ static CGEventRef dockSwipeEvent(int asHID, int phase, double progress, double s
     CGEventSetDoubleValueField(dock, kCGEventGestureSwipeVelocityX, speed);
     CGEventSetDoubleValueField(dock, kCGEventGestureSwipeVelocityY, speed);
   }
+  CGEventSetFlags(dock, 0);
+  CGEventSetFlags(gesture, 0);
   CGEventSetLocation(dock, at);
   CGEventSetLocation(gesture, at);
   *extra = gesture;
@@ -1880,6 +1889,8 @@ static int dockSwipe(CGPoint at, int phase, int right) {
     CGEventSetDoubleValueField(dock, kCGEventGestureSwipeVelocityX, s * 400.0);
     CGEventSetDoubleValueField(dock, kCGEventGestureSwipeVelocityY, 0);
   }
+  CGEventSetFlags(dock, 0);
+  CGEventSetFlags(gesture, 0);
   CGEventSetLocation(dock, at);
   CGEventSetLocation(gesture, at);
   CGEventPost(kCGSessionEventTap, dock);
@@ -1995,6 +2006,23 @@ static pid_t topAppOn(CGRect b, pid_t skip, CGWindowID *win) {
 #ifndef GESTURES_DOMAIN
 #define GESTURES_DOMAIN (testIdentity() ? CFSTR("org.omacvm.test.gestures") : CFSTR("org.omacvm.gestures"))
 #endif
+
+#ifndef CAPTURE_WINDOW_DOMAIN
+#define CAPTURE_WINDOW_DOMAIN GESTURES_DOMAIN
+#endif
+
+// Opt-in window capture leaves the fullscreen escape/Space bookkeeping intact.
+static int windowCapture(void) {
+  static double checked;
+  static int enabled;
+  double now = CFAbsoluteTimeGetCurrent();
+  if (now - checked > 2) {
+    checked = now;
+    CFPreferencesAppSynchronize(CAPTURE_WINDOW_DOMAIN);
+    enabled = CFPreferencesGetAppBooleanValue(CFSTR("CaptureWindow"), CAPTURE_WINDOW_DOMAIN, NULL);
+  }
+  return enabled;
+}
 
 // "EscapeSwipe": "all" moves every display that shows the VM, anything else
 // (default) the display under the pointer only.
@@ -2462,6 +2490,29 @@ static void whenKeysUp(void (^f)(void), int tries) {
                  ^{ pendingSteps--; whenKeysUp(f, tries - 1); });
 }
 
+// Ubuntu can post the existing Dock swipe while the shortcut's modifiers are
+// held. Keep animation verification/fallbacks; remove only the key-release wait.
+#ifdef UBUNTU_GESTURES
+static int immediateSpaceSwitch = 1;
+#else
+static int immediateSpaceSwitch;
+#endif
+static void startSpaceMoves(const char *what, void (^check)(int)) {
+  CGEventFlags modifiers = kCGEventFlagMaskControl | kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift;
+  if (immediateSpaceSwitch && (heldFn() & modifiers) && runMoves(BY_DOCK, what)) {
+    logf_("escape combo: Space switch started without waiting for modifier release");
+    leaveWaiting = 0;
+    after(^{ check(BY_DOCK); });
+    return;
+  }
+  // Posting refused (or no modifiers held): retain the existing shortcut path.
+  whenKeysUp(^{
+    leaveWaiting = 0;
+    if (runMoves(BY_SHORTCUT, what)) after(^{ check(BY_SHORTCUT); });
+    else { if (leaving) shortcutOff = 1; check(BY_SHORTCUT); }
+  }, 50);
+}
+
 static void missionControlWhenKeysUp(void) { whenKeysUp(^{ missionControl(); }, 50); }
 
 static int showsVM(const DisplaySpaces *d, const CGRect *wins, int nw) {
@@ -2589,11 +2640,7 @@ static void leavePlan(double askedAt) {
   }
   if (nMoves) {
     leaveWaiting = 1;
-    whenKeysUp(^{
-      leaveWaiting = 0;
-      if (runMoves(BY_SHORTCUT, "out of the VM")) after(^{ checkLeave(BY_SHORTCUT); });
-      else { shortcutOff = 1; checkLeave(BY_SHORTCUT); }   // the shortcut is off: on to the Dock swipe
-    }, 50);
+    startSpaceMoves("out of the VM", ^(int by) { checkLeave(by); });
     return;
   }
   // The pointer is on a display without the VM: nothing to move there, the
@@ -3201,10 +3248,7 @@ static void enterVMNow(int mayCloseMC) {
     if (want && d->current != want) addMove(d, stepToward(d, want), want);
   }
   if (!nMoves) { goTo(vmPid, enterWin, "back into the VM:", NULL); return; }
-  whenKeysUp(^{
-    if (runMoves(BY_SHORTCUT, "back into the VM")) after(^{ checkEnter(); });
-    else checkEnter();
-  }, 50);
+  startSpaceMoves("back into the VM", ^(int by) { (void)by; checkEnter(); });
 }
 
 // A windowed VM with the keyboard: the app from before (else Finder) gets
@@ -4102,6 +4146,32 @@ static void waitLook(void) {
 }
 static void waitTick(CFRunLoopTimerRef t, void *info) { (void)t; (void)info; waitLook(); }
 
+#ifdef UBUNTU_GESTURES
+// A fresh report from this process, including actual event-tap/forwarding state.
+// Only numeric/boolean state is saved, never input contents or VM names.
+static void reportStatus(CFRunLoopTimerRef timer, void *info) {
+  (void)timer; (void)info;
+  const char *home = getenv("HOME");
+  if (!home) return;
+  char folder[4096], path[4096], temp[4096];
+  snprintf(folder, sizeof folder, "%s/Library/Application Support/omacvm", home); mkdir(folder, 0755);
+  snprintf(folder, sizeof folder, "%s/Library/Application Support/omacvm/gestures", home); mkdir(folder, 0700);
+  snprintf(path, sizeof path, "%s/status.json", folder);
+  snprintf(temp, sizeof temp, "%s/status.tmp", folder);
+  int fd = open(temp, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+  if (fd < 0) return;
+  int perm = permFn();
+  pthread_mutex_lock(&sendLock);
+  double forwarded = lastGestureForwarded;
+  pthread_mutex_unlock(&sendLock);
+  dprintf(fd, "{\"schema\":1,\"pid\":%d,\"updated\":%.3f,\"accessibility\":%s,\"input\":%s,\"tap\":%s,\"trackpad\":%s,\"connected\":%s,\"capturing\":%s,\"forwarded\":%.3f}\n",
+          getpid(), unixNow(), perm & PERM_AX ? "true" : "false", perm & PERM_IM ? "true" : "false",
+          tapPort && CFMachPortIsValid(tapPort) && CGEventTapIsEnabled(tapPort) && !inputPaused ? "true" : "false",
+          (nPads || nMice) ? "true" : "false", haveClient() ? "true" : "false", capturing ? "true" : "false", forwarded);
+  close(fd); rename(temp, path);
+}
+#endif
+
 int main(int argc, char **argv) {
   if (argc == 2 && !strcmp(argv[1], "--permissions")) return permissionsChild();
   logToFile();
@@ -4134,17 +4204,23 @@ int main(int argc, char **argv) {
   CFNotificationCenterAddObserver(CFNotificationCenterGetDistributedCenter(), NULL, accessibilityChanged,
                                   CFSTR("com.apple.accessibility.api"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
   slowPerm = slowPermNow();
+#ifdef UBUNTU_GESTURES
+  CFRunLoopTimerRef statusTimer = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent(), 2, 0, 0, reportStatus, NULL);
+  CFRunLoopAddTimer(CFRunLoopGetCurrent(), statusTimer, kCFRunLoopCommonModes);
+#endif
   if (installTap()) startRunning();
   else {
     waiting = 1;
     logf_("waiting for Accessibility and Input Monitoring permission");
     logPermissions();   // which one is missing
+#ifndef UBUNTU_GESTURES
     clearOldGrantsOnce(permFn());
+#endif
     CFStringRef keys[] = { kAXTrustedCheckOptionPrompt }; CFTypeRef vals[] = { kCFBooleanTrue };
     CFDictionaryRef opts = CFDictionaryCreate(NULL, (const void **)keys, (const void **)vals, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-    AXIsProcessTrustedWithOptions(opts);
+    if (!(permFn() & PERM_AX)) AXIsProcessTrustedWithOptions(opts);
     CFRelease(opts);
-    CGRequestListenEventAccess();
+    if (!(permFn() & PERM_IM)) CGRequestListenEventAccess();
     waitTimer = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 3, 3, 0, 0, waitTick, NULL);
     CFRunLoopAddTimer(CFRunLoopGetCurrent(), waitTimer, kCFRunLoopCommonModes);
   }

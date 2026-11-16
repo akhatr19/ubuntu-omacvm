@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=UbuntuVM WebGPU Browser
+Comment=Browser with Mac GPU compute; video decodes on the CPU
+Exec=omacvm-browser-webgpu %U
+Icon=web-browser
+Categories=Network;WebBrowser;

@@ -241,6 +241,11 @@ echo "${OMACVM_APPLY_SSH_SECONDS:-unset}" >> "$FAKE_DIR/apply-env.log"
 if [[ $FAKE_MODE == apply4-ssh && $(wc -l < "$FAKE_DIR/apply.log") -eq 1 ]]; then
   echo "ERROR: Old does not answer over SSH (127.0.0.1:52998): SSH closed the connection."; exit 1
 fi
+# apply4-copy: the first apply's copy into the VM fails (apply.sh's own error line, in colour).
+if [[ $FAKE_MODE == apply4-copy && $(wc -l < "$FAKE_DIR/apply.log") -eq 1 ]]; then
+  echo "in the VM: tar: ./guest/install.sh: Cannot open: No space left on device"
+  printf '\033[1;31merror:\033[0m OmacVM did not get into the VM (unpacking it in the VM failed, see above): nothing changed there\n'; exit 1
+fi
 echo "(apply)" >> "$FAKE_DIR/ssh.log"   # in order with what the move asked the VM
 # apply6-fail: the apply after the move (the second one) fails once.
 if [[ $FAKE_MODE == apply6-fail && $(wc -l < "$FAKE_DIR/apply.log") -eq 2 ]]; then echo "error: the VM side failed"; exit 1; fi
@@ -493,7 +498,7 @@ kill "$live" 2>/dev/null
 
 # ---------- a VM on Mac OS Extended (cp -c copies there, rc 0): refused ----------
 H=$T/hfs
-if hdiutil create -quiet -size 40m -fs HFS+ -volname omacvm-move-test "$T/hfs.dmg" 2>/dev/null && mkdir -p "$H" &&
+if "$R/src/tests/hdiutil-create.sh" 120 -quiet -size 40m -fs HFS+ -volname omacvm-move-test "$T/hfs.dmg" 2>/dev/null && mkdir -p "$H" &&
    hdiutil attach -quiet -nobrowse -mountpoint "$H" "$T/hfs.dmg" 2>/dev/null; then
   Vs=$V; V=$H/Old; mkdir -p "$V"
   cp "$Vs/vm.env" "$Vs/efi-vars.fd" "$Vs/ready" "$V/"; dd if=/dev/urandom of="$V/disk.img" bs=1k count=64 2>/dev/null
@@ -687,6 +692,20 @@ fresh
 mv_run apply4-ssh run; rc=$?
 expect "apply cannot reach the VM: its own words in the reason" "1 4 yes" \
   "$rc $(jget failed_step) $(jget reason | grep -q '^OmacVM did not update in the VM: Old does not answer over SSH' && echo yes || jget reason)"
+# #771: the failed apply's log is kept through the Resume, and the reason names the part of the copy.
+fresh
+mv_run apply4-copy run; rc=$?
+expect "apply's copy fails: step 4, the part that failed in the reason" "1 4 yes" \
+  "$rc $(jget failed_step) $(jget reason | grep -q '^OmacVM did not update in the VM: OmacVM did not get into the VM (unpacking it in the VM failed, see above)' && echo yes || jget reason)"
+mv_run ok run; rc=$?
+expect "... Resume: to the end, every apply's log kept (the failed one, then steps 4 and 6)" "0 done 1 0 0" \
+  "$rc $(jget state) $(grep -c 'No space left' "$V/logs/move-apply.log.2") $(grep -c 'No space left' "$V/logs/move-apply.log.1") $(grep -c 'No space left' "$V/logs/move-apply.log")"
+kal=$(awk '/^keep_apply_log\(\) \{/ { on = 1 } on { print } on && /^}$/ { exit }' "$A/scripts/move-vm.sh")
+expect "keep_apply_log: at most 9 earlier logs, the newest as .1; an empty one does not push them out" " 11 10 9 8 7 6 5 4 3 none" "$(LOG=$T/kl; mkdir -p "$LOG"
+  eval "$kal"; for i in 1 2 3 4 5 6 7 8 9 10 11; do echo "$i" > "$LOG/move-apply.log"; keep_apply_log; done; : > "$LOG/move-apply.log"; keep_apply_log
+  echo "$(cat "$LOG/move-apply.log" 2>/dev/null)" $(for n in 1 2 3 4 5 6 7 8 9; do cat "$LOG/move-apply.log.$n"; done) \
+  "$([[ -e $LOG/move-apply.log.10 ]] && echo ten || echo none)")"
+expect "... the failed apply's exit code is in its log" "1" "$(grep -c '^move-vm.sh: apply-vm.sh exit [1-9]' "$V/logs/move-apply.log.2")"
 fresh
 t0=$(date +%s)
 mv_run grub-restart run OMACVM_MOVE_BOOT_SECONDS=60; rc=$?

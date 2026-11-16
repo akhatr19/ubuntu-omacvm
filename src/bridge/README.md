@@ -15,7 +15,7 @@ camera come through OmacVM.app's own ports.)
 | VM client | `guest/omacvm-bridge` (bash + curl; the token never shows in `ps`, and goes only to a Bridge that proved it knows it, see API) |
 | VM popups | `guest/omacvm-bridge-osd`, user service: the Mac's volume/brightness changes as Omarchy's own OSD |
 | Shared event stream | `guest/omacvm-bridge-events`, user socket `omacvm-bridge-events.socket` (`$XDG_RUNTIME_DIR/omacvm-bridge-events.sock`): one `/events` connection to the Mac per VM; `omacvm-bridge events` reads from it, so the widgets and the OSD keep their interface (see Events) |
-| Night light | `guest/omarchy-toggle-nightlight` in `/usr/local/bin`, ahead of Omarchy's: Super+Ctrl+N and the menu switch the Mac's Night Shift |
+| Night light | `guest/omarchy-toggle-nightlight` in `/usr/local/bin`, linked from `/usr/local/lib/omacvm/omarchy-overrides`. Omarchy's `envs.lua` puts its own bin first on the session's PATH, so `../guest/omacvm_vm.lua` puts that folder ahead of it. Then Omarchy's menu (Nightlight) switches the Mac's Night Shift, and on Omarchy 4.0 so does Super+Ctrl+N. On 4.5 Super+Ctrl+N is Omarchy's Network panel and stays so: the menu and the bar's Night Shift drive the Mac there. Bridge off: the link goes, Omarchy's own toggle runs again |
 | Bar widgets | `plugins/omacvm.bluetooth`, `plugins/omacvm.wifi`, `plugins/omacvm.audio` (clones of Omarchy's Bluetooth, network and audio widgets; Super+Ctrl+B opens the Bluetooth one), `plugins/omacvm.nightshift` |
 
 Only Apple frameworks: CoreWLAN, CoreLocation, CoreAudio, IOBluetooth,
@@ -215,7 +215,7 @@ panel's "Pair a new device…" opens the Mac's Bluetooth settings.
 
 | event | when |
 |---|---|
-| `wifi` | power, SSID, BSSID, link, mode changes (CoreWLAN events, ~0.3 s); RSSI re-read every 5 s while a client is connected, sent at once when the bar's signal level changes, else at most every 30 s |
+| `wifi` | power, SSID, BSSID, link, mode changes (CoreWLAN events, ~0.3 s); RSSI re-read every 5 s while a client is connected (the name, BSSID, security and country code only after such an event, a wake or at least every 5 min: each of those reads costs `locationd` a permission check), sent at once when the bar's signal level changes, else at most every 30 s |
 | `audio` | default device, volume, mute, devices added/removed (CoreAudio listeners) |
 | `display` | Night Shift (its own notification), True Tone, brightness |
 | `bluetooth` | power, devices connecting and disconnecting (IOBluetooth notifications), anything else within 5 s; battery re-read every minute while something is connected |

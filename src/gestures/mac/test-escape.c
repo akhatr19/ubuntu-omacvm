@@ -137,7 +137,9 @@ static int fakeKey(Hotkey k) {
 }
 // "macOS": a Dock swipe moves the display only when swipeMoves is set (the
 // user's MacBook on macOS 15); its sign as the helper has it now.
+static int refuseSwipe;
 static int fakeSwipe(CGDirectDisplayID id, CGRect b, int dir) {
+  if (refuseSwipe) return 0;
   (void)b; swipes++;
   if (swipeMoves) moveSpace(worldOf(id), dir * swipeSign > 0 ? 1 : -1);
   return 1;
@@ -487,6 +489,21 @@ int main(void) {
         "... held on and on: after 1 s it goes anyway");
   heldPolls = 0;
   settle(vm, NET_APP); sent();
+
+  // Ubuntu fast path: dispatch without waiting for held shortcut modifiers.
+  immediateSpaceSwitch = 1; swipeMoves = 1; heldPolls = 1000; heldAsked = 0;
+  check(press(K, HID, 0) == 1 && swipes == 1 && !spaceKeys && world[0].cur == 101 && heldAsked == 1,
+        "Ubuntu: leave starts a Dock swipe without polling for modifier release");
+  sent(); settle(vm, NET_APP); heldAsked = 0;
+  check(press(K, HID, 0) == 1 && swipes == 1 && !spaceKeys && world[0].cur == 102 && heldAsked == 1,
+        "Ubuntu: return starts a Dock swipe without polling for modifier release");
+  sent(); settle(vm, NET_APP);
+  refuseSwipe = 1; heldPolls = 5; heldAsked = 0;
+  check(press(K, HID, 0) == 1 && spaceKeys == 1 && world[0].cur == 101 && heldAsked >= 5,
+        "Ubuntu: refused Dock posting retains the safe keyboard fallback");
+  refuseSwipe = 0; heldPolls = 0;
+  sent(); settle(vm, NET_APP); press(K, HID, 0); sent(); settle(vm, NET_APP);
+  immediateSpaceSwitch = 0; swipeMoves = 0;
 
   // A changed binding: the user's own keys are posted.
   setKey(HOTKEY_SPACE_LEFT, kCFBooleanTrue, 33, 0x180000);
@@ -1657,6 +1674,7 @@ int main(void) {
           CGEventGetDoubleValueField(e, 124) == -0.75 && (uint32_t)CGEventGetIntegerValueField(e, 135) == bits &&
           CGEventGetIntegerValueField(e, 123) == 1 && CGEventGetIntegerValueField(extra, 55) == 29,
           "events (fields): Changed at -0.75: the Dock's swipe, phase, progress (also as a float's bits), horizontal, plus the gesture event");
+    check(e && extra && !CGEventGetFlags(e) && !CGEventGetFlags(extra), "Space swipe events do not inherit held escape modifiers");
     CFRelease(e); CFRelease(extra);
     e = dockSwipeEvent(0, kSwipeEnded, -1.2, -3.5, at, &extra);
     check(e && CGEventGetIntegerValueField(e, 132) == kSwipeEnded && CGEventGetDoubleValueField(e, 129) == -3.5, "events (fields): Ended carries the speed");
@@ -1672,6 +1690,7 @@ int main(void) {
     } else {
       e = dockSwipeEvent(1, kSwipeChanged, -0.75, 0, at, &extra);
       HIDEventRef h = e ? copyHID(e) : NULL;
+      check(e && !CGEventGetFlags(e), "HID Space swipe does not inherit held escape modifiers");
       check(e && !extra && CGEventGetType(e) == 30 && h && hidType(h) == 23 && hidInt(h, HID_FIELD(23, 1)) == 1 &&
             hidInt(h, HID_FIELD(23, 5)) == 3 && hidFloat(h, HID_FIELD(23, 2)) == -0.75 && hidPhase(h) == kSwipeChanged,
             "events (IOHIDEvent, macOS 27): a type-30 event carrying a Dock swipe: horizontal, the Dock's flavor, progress, phase");

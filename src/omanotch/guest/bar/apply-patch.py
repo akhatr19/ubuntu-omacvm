@@ -36,7 +36,12 @@ What the patch adds:
     covers the strip itself (/run/omacvm/host.env: OMACVM_FULLPANEL, the
     camera housing in Mac points), the bar on the built-in display sits in
     the strip, as tall as it, split around the housing, and reserves it
-    (windows start below it; black over full-screen windows). Hidden
+    less 5 px of Omarchy's top window gap, all of the gap when it is under 5
+    (#758: windows keep the rest of the gap below the strip, not in it; the
+    whole strip while a workspace with a smaller top gap shows, such as
+    Omarchy's drop-down console; a gap set with hyprctl eval alone is seen
+    at the next shell start or config reload; black over full-screen
+    windows). Hidden
     (Super+Shift+Space), it still reserves the strip but is see-through, so
     Omarchy's wallpaper shows there up to the top edge. Only while the app
     says that output covers the whole display in full screen
@@ -54,6 +59,35 @@ What the patch adds:
     Omarchy 4.5's tray grows as its drawer slides open: Skip the notch
     places it by its width with the drawer open, so the drawer opens in
     place, clear of the housing, and the tray does not move while it slides.
+  * Skip the notch shows an item where it stays (#757): 4.5's lists count
+    the size each item asks for (implicitWidth; its laid-out width comes
+    from a polish the items force while the list is still counting, and
+    QML dropped that update as a binding loop); an item whose own size
+    changed takes its new place at once (only items pushed by others
+    glide); an item that shows up (it had no width, as the tray before its
+    first app) waits unseen until its own place has been quiet for 150 ms
+    (1 s at most); the tray until its size with the drawer open has been
+    quiet for 1.5 s (8 s at most), also at login, so apps that start a
+    second or so apart show it once, on its side.
+  * Omarchy 4.5's indicators (#763, #764): their hidden ones also open
+    while the pointer is on the indicators' own place or where Skip the
+    notch opens the hidden ones left of the housing, and stay while it is
+    there, whatever their own hover says; the stretch between those two
+    places (the housing and the widgets there) only keeps them open on the
+    way from one to the other, it never opens them, and left of the hidden
+    ones they shut. Omarchy's rule (the bar left of the centre box) counts
+    only in Omarchy's own layout (they sit inside that stretch and Skip the
+    notch did not move their hidden ones), and only left of the housing:
+    nothing opens under the camera housing.
+    Only this copy of the bar: Omarchy's own bar keeps its rule.
+  * Omarchy 4.5's workspaces on the NOTCH bar (#760): the copy's own
+    widgets/Workspaces.qml (workspaces-patch.py), which shows the workspaces
+    of the display the strip stands in for, as 4.0's omacvm.workspaces does.
+    4.5 loads every widget from its registry, so the copy's file never ran
+    and the strip showed NOTCH's own block. Only Omarchy's own
+    omarchy.workspaces on the NOTCH bar; every other bar keeps the
+    registry's, and so does NOTCH when the copy's file is gone or does not
+    load (one warning). The notchbar state says which: "workspaces".
 
 Omarchy's Bar.qml changed in October 2026 (upstream's notch floor from
 display-cutouts.json, a bar thickness per screen, the centre's hover area):
@@ -67,13 +101,14 @@ the centre is three sections (centerBegin, the center box, centerEnd). The
 same pieces go in there: a notch role's window is its strip, the centre
 sections lie around the camera housing (centerBegin ends left of it, the
 box and centerEnd start right of it, as the centre did before), and the
-peek follows 4.5's own rule (left of the centre box).
+peek follows 4.5's own rule (left of the centre box) where the indicators
+sit inside that stretch, unmoved, else their own places (step 10).
 """
 import os
 import sys
 
 MARK = "omarchy-notch-bar"
-VERSION = 39
+VERSION = 43
 VERSION_LINE = f"// omarchy-notch-bar patch v{VERSION}"
 
 
@@ -108,22 +143,38 @@ COMMON = [
     "  function notchParkedX(x) {\n",                                        # 1. clicks to the item's twin
     "    function onNotchParkedChanged() { root.notchTraySet(false, \"\", \"\") }\n",  # 2. its drawer closes
     "      function notchParkEnd() {\n",                                    # 3. mapped again after the park (#727)
+    "    property bool notchAppearing: false\n",                              # 9. shows up where it stays (#757)
+    "      id: notchShowLimit\n",                                             # 9. ... 1 s at most
+    "  function notchPanelZoneFor(size, gapsTop) {\n",                         # 1. FullPanel's zone (#758)
+    "    readonly property int notchPanelZone: root.notchPanelZoneFor(notchPanelFit[0], root.notchGapsAt(screen ? screen.name : \"\", root.notchGapsSure, root.notchGapsSeen, root.notchSpecials, root.notchFlush))\n",  # 3.
+    "  function notchGapsFor(output, state, specials, flush) {\n",             # 1. ... a workspace rule's gap (#758)
+    "    id: notchGapRulesProc\n",                                             # 1.
+    "    id: notchFlushBarFile\n",                                             # 1. ... flush-bar
+    "  readonly property bool notchFlush: notchFlushBar && requestedTransparent && position === \"top\"\n",  # 1.
 ]
 PIECES = COMMON + [
+    "      when: barWindow.notchRole === \"fullpanel\" && !barWindow.parked; restoreMode: Binding.RestoreNone\n",  # 3. #758
     "        Item { id: notchLeftEdge; ",                                     # 5. around the housing
     "    property var notchBeside: [0, 0]\n",                                # 5.
     "            notchShift: root.notchShiftAt(moduleListRoot.notchShift, index)\n",  # 8. lists
 ]
 PIECES_45 = COMMON + [
     '      height: root.vertical ? parent.height : (barWindow.notchRole === "" ? barWindow.thickness : parent.height)\n',  # 3.
-    "    exclusiveZone: barWindow.notchRole === \"\" ? thickness : barWindow.parkedSize\n",  # 3.
+    "      : barWindow.notchRole === \"fullpanel\" ? barWindow.notchPanelZone : barWindow.parkedSize\n",  # 3. #758
     "    readonly property var notchBeside: notchSections.notchBeside\n",      # 5. around the housing
     "(sections.notchLayout ? root.notchRight + Style.space(6) : ",           # 5.
     "            notchSlotIndex: moduleListRoot.keys.indexOf(modelData.key)\n",  # 8. lists
     "    readonly property real notchRest: {\n",                              # 8.
-    "          : more > 0 ? [c.width, c.width + more] : c.width\n",            # 8. a tray counts open
+    "          : more > 0 ? [w, w + more] : w\n",                              # 8. a tray counts open
     "      ? [beginList.notchRest, centerBox.notchRest + endList.notchRest, beginList.notchPeekMore] : [0, 0]\n",  # 5. the peek's room
     "    readonly property real notchRest: boxList.notchRest\n",              # 5. the centre at rest
+    "hovered && root.notchPeeksAt(barWindow, parent, point.position, ",       # 10. the peek where the indicators are
+    "    function onCenterSectionRevealHeldChanged() { Qt.callLater(root.notchPeekHeldTick) }\n",  # 10. ... held open
+    "    onNotchPeekPlaceChanged: if (notchPeekBlock) Qt.callLater(root.notchIndicatorTick)\n",  # 10.
+    "  function notchRegistryComponent(name, entry, custom, role, ours, firstParty) {\n",  # 11. NOTCH's workspaces (#760)
+    "        WidgetPool { id: horizontalPool; notchRole: barWindow.notchRole }\n",  # 11.
+    "      return root.notchRegistryComponent(registryName, w[registryName], customType, pool ? pool.notchRole : \"\", root.notchWorkspacesComponent, firstParty)\n",  # 11.
+    "skip: root.notchSkipOn, workspaces: root.notchWorkspacesFrom(),\n",  # 11.
 ]
 
 
@@ -435,6 +486,10 @@ def lists_45(text):
     // drawer slides open, so where it goes is decided by that width, and it
     // opens in place and never moves from under the pointer), and the list's
     // width at rest.
+    // Each by the size the slot asks for (implicitWidth, from bindings), not
+    // its laid-out width: the layout sets that in its polish, which the slots
+    // force (ensurePolished) while this is still being counted, and QML drops
+    // such an update as a binding loop (#757).
     property var notchShift: null
     readonly property var notchWidths: {
       var out = []
@@ -442,8 +497,9 @@ def lists_45(text):
         var c = children[i]
         if (!c || !(c.notchSlotIndex >= 0)) continue
         var t = c.activeItem, more = t && root.notchIsTray(t) ? Number(t.drawerExtent) - Number(t.revealExtent) : 0
-        out[c.notchSlotIndex] = c.notchPeekFull > 0 ? [c.width, c.notchPeekRest, c.notchPeekFull]
-          : more > 0 ? [c.width, c.width + more] : c.width
+        var w = c.implicitWidth
+        out[c.notchSlotIndex] = c.notchPeekFull > 0 ? [w, c.notchPeekRest, c.notchPeekFull]
+          : more > 0 ? [w, w + more] : w
       }
       for (var j = 0; j < out.length; j++) if (out[j] === undefined) out[j] = 0
       return out
@@ -485,6 +541,125 @@ def lists_45(text):
             notchShift: root.notchShiftAt(moduleListRoot.notchShift, notchSlotIndex)
             notchShown: moduleListRoot.notchShown
             notchHold: moduleListRoot.notchHold
+''')
+    return text
+
+
+def peek_45(text):
+    """Step 10 on Omarchy 4.5's bar: the bar's hover handler peeks where the
+    indicators are (root.notchPeeksAt; point.position and the indicators'
+    place both in the handler's item), from root.notchIndicatorSpans, which
+    their slot refreshes after it moved and the handler when the pointer
+    comes onto the bar (after step 9, in the slot's body), and from
+    root.notchPeekHeld, a copy of centerSectionRevealHeld set once its change
+    is done (the handler's own answer changes centerSectionRevealHeld)."""
+    text = replace_once(text, '''  property bool centerSectionRevealHeld: false
+''', '''  property bool centerSectionRevealHeld: false
+  // omarchy-notch-bar: centerSectionRevealHeld as it was once its last change
+  // was done, for the bar's hover (root.notchPeeksAt): read straight, the
+  // hover's own opening would change what it reads while it is being set.
+  // A Connections, so a handler of Omarchy's own on root still fits.
+  property bool notchPeekHeld: false
+  function notchPeekHeldTick() { notchPeekHeld = centerSectionRevealHeld }
+  Connections {
+    target: root
+    function onCenterSectionRevealHeldChanged() { Qt.callLater(root.notchPeekHeldTick) }
+  }
+''')
+    text = replace_once(text, '''          readonly property bool peeking: hovered && BarModel.peeksAt(point.position, barWindow.peekEdge, root.vertical)
+''', '''          // omarchy-notch-bar: also over the indicators' places, never under
+          // the camera housing (root.notchPeeksAt).
+          readonly property bool peeking: hovered && root.notchPeeksAt(barWindow, parent, point.position, BarModel.peeksAt(point.position, barWindow.peekEdge, root.vertical), null, root.notchPeekHeld)
+          onHoveredChanged: if (hovered) Qt.callLater(root.notchIndicatorTick)
+''')
+    text = replace_once(text, '''    onNotchPeekBlockChanged: notchPeekApply()
+''', '''    onNotchPeekBlockChanged: { notchPeekApply(); Qt.callLater(root.notchIndicatorTick) }
+    // The indicators' place on their bar (their row, Skip the notch's place
+    // and peek): when it changes, root.notchIndicatorSpans is read again once
+    // this change is done.
+    readonly property string notchPeekPlace: {
+      if (!notchPeekBlock) return ""
+      var a = [width, notchShownX, notchPlaceX, notchShiftGone, notchAppearing, notchPeekFull,
+               notchShift ? notchShift.peekAt : "", notchShift ? notchShift.peekHidden : ""]
+      for (var p = slot; p && p.parent; p = p.parent) a.push(p.x)
+      return a.join(" ")
+    }
+    onNotchPeekPlaceChanged: if (notchPeekBlock) Qt.callLater(root.notchIndicatorTick)
+''')
+    return text
+
+
+def workspaces_45(text):
+    """Step 11 on Omarchy 4.5's bar (#760): the NOTCH bar's workspaces are the
+    copy's own widgets/Workspaces.qml (workspaces-patch.py: it shows the
+    display the strip stands in for), not the registry's. 4.5 loads every
+    widget from its registry, so the copy's widget never ran. Only for
+    Omarchy's own omarchy.workspaces, which gets the bar itself (its
+    notchParkedScreen); every other bar, a user's own widget, and a copy whose
+    widget is gone or does not load keep the registry's."""
+    text = replace_once(text, '''  property var widgetHosts: []
+''', '''  property var widgetHosts: []
+  // omarchy-notch-bar: the copy's own workspaces widget, for the NOTCH bar
+  // (notchRegistryComponent); null when it is gone or does not load. Loaded
+  // on every bar, so a widget that stopped loading after an update shows in
+  // the log and in the notchbar state at once. No path in the warning: the
+  // copy's check would count it as the copy not loading.
+  readonly property var notchWorkspacesComponent: notchWorkspacesLoad()
+  function notchWorkspacesLoad() {
+    var c = Qt.createComponent(Qt.resolvedUrl("widgets/Workspaces.qml"), Component.PreferSynchronous)
+    if (c && c.status === Component.Ready) return c
+    var gone = !c || String(c.errorString()).indexOf("No such file") !== -1
+    console.warn("omanotch: NOTCH workspaces: Omarchy's widget (" + (gone ? "missing" : "error") + ")")
+    return null
+  }
+  // The component a widget host loads: the registry's (Omarchy's binding),
+  // or ours on the NOTCH bar for Omarchy's own workspaces widget. firstParty
+  // is the host's own (Omarchy's metadataFor): the same that hands the
+  // widget the bar itself, which our copy needs (notchParkedScreen).
+  function notchRegistryComponent(name, entry, custom, role, ours, firstParty) {
+    if (custom) return null
+    if (!entry) return null
+    if (role === "notch" && name === "omarchy.workspaces" && ours && firstParty === true) return ours
+    return entry.component
+  }
+  // Where the NOTCH bar's workspaces widget comes from (notchbar state):
+  // "copy", "omarchy", or "none" (no NOTCH bar, or no such widget on it).
+  function notchWorkspacesFrom() {
+    for (var i = 0; i < widgetHosts.length; i++) {
+      var h = widgetHosts[i]
+      if (!h || !h.pool || h.pool.notchRole !== "notch" || !h.registryComponent) continue
+      if (canonicalWidgetId(h.moduleName) !== "omarchy.workspaces") continue
+      return h.registryComponent === notchWorkspacesComponent ? "copy" : "omarchy"
+    }
+    return "none"
+  }
+''')
+    # Each bar surface's pool says whether it is the NOTCH bar's from the
+    # start, so a widget is loaded once, from the right file. Only the
+    # horizontal one: a notch role is a top bar's alone (notchRoleFor).
+    text = replace_once(text, '''  component WidgetPool: Item {
+    id: widgetPool
+''', '''  component WidgetPool: Item {
+    id: widgetPool
+    // omarchy-notch-bar: its bar window's notch role ("notch" on NOTCH).
+    property string notchRole: ""
+''')
+    text = replace_once(text, '''        WidgetPool { id: horizontalPool }
+''', '''        WidgetPool { id: horizontalPool; notchRole: barWindow.notchRole }
+''')
+    # The host's firstParty (Omarchy's metadataFor) decides it with the bar it
+    # hands the widget; a bar without that property is not patched.
+    text = replace_once(text, '''    readonly property bool firstParty: registryMetadata && registryMetadata.firstParty === true
+''', '''    // omarchy-notch-bar: also whether the NOTCH bar's workspaces are the
+    // copy's (notchRegistryComponent): they need this bar itself.
+    readonly property bool firstParty: registryMetadata && registryMetadata.firstParty === true
+''')
+    text = replace_once(text, '''      return w[registryName] ? w[registryName].component : null
+''', '''      // omarchy-notch-bar: the NOTCH bar's workspaces are the copy's.
+      return root.notchRegistryComponent(registryName, w[registryName], customType, pool ? pool.notchRole : "", root.notchWorkspacesComponent, firstParty)
+''')
+    text = replace_once(text, '''skip: root.notchSkipOn,
+''', '''skip: root.notchSkipOn, workspaces: root.notchWorkspacesFrom(),
 ''')
     return text
 
@@ -620,6 +795,197 @@ def main():
         notchFullscreenDebounce.restart()
     }
   }
+  // FullPanel's bar reserves its strip less 5 px of Omarchy's top window
+  // gap (all of the gap when it is under 5; #758): windows sit up to 5 px
+  // closer under the notch, and never in the strip (zone + gap >= the
+  // strip). The gap is the smallest top gap a window on the bar's output can
+  // have now (notchGapsFor): general:gaps_out, and the gaps_out of each
+  // workspace rule that sets one. A rule for a special workspace counts
+  // while that workspace shows on the output: Omarchy's drop-down console
+  // (4.5, special:qconsole) and 4.0's scratchpad have top 0, so the whole
+  // strip then. Any other rule (a normal workspace, a selector such as
+  // w[tv1]) counts always. Under a transparent top bar with omarchy-mac's
+  // flush-bar plugin, which sets that edge's gap to 0, the whole strip at
+  // once.
+  // Read from Hyprland at start, after a config reload and after the bar's
+  // look changes, soon and once more later: a smaller gap counts from the
+  // first read, a larger one only from the later read (after a reload
+  // Hyprland has its default first, and a script such as flush-bar sets
+  // its own value after it). Until read: the whole strip. A gap changed
+  // with hyprctl eval or keyword alone sends no event: the bar sees it at
+  // its next start (a config reload sets the configured gap again).
+  property var notchGapsSure: ({ top: 0, rules: null })  // the last later read
+  property var notchGapsSeen: ({ top: 0, rules: null })  // the last read
+  // Output name -> the special workspace shown on it ("" none).
+  property var notchSpecials: ({})
+  property int notchSpecialSerial: 0
+  property bool notchFlushBar: false
+  // requestedTransparent: the bar's setting, as flush-bar sees it (the bar
+  // turns transparent itself only after it picked a text colour).
+  readonly property bool notchFlush: notchFlushBar && requestedTransparent && position === "top"
+  property var notchGapsPass: null
+  property int notchGapsQueued: 0  // a read asked while one runs: 1 soon, 2 later
+  // hyprctl -j getoption general:gaps_out -> its top, -1 if unreadable.
+  function notchGapsParse(text) {
+    try {
+      var o = JSON.parse(String(text))
+      var parts = String(o.css || o.custom || "").match(/-?[0-9]+(?:\\.[0-9]+)?/g) || []
+      var n = parts.length > 0 ? Number(parts[0]) : Number(o.int)
+      return isFinite(n) && n >= 0 ? Math.floor(n) : -1
+    } catch (e) {
+      return -1
+    }
+  }
+  // hyprctl -j workspacerules -> [{name, top}] of the rules that set
+  // gaps_out (top first, as CSS), null if unreadable.
+  function notchGapRulesParse(text) {
+    try {
+      var list = JSON.parse(String(text)), out = []
+      if (!Array.isArray(list)) return null
+      for (var i = 0; i < list.length; i++) {
+        var r = list[i] || {}, g = r.gapsOut
+        if (g === undefined || g === null) continue
+        var top = Number(Array.isArray(g) ? g[0] : typeof g === "object" ? g.top : g)
+        if (isFinite(top)) out.push({ name: String(r.workspaceString || ""), top: Math.max(0, Math.floor(top)) })
+      }
+      return out
+    } catch (e) {
+      return null
+    }
+  }
+  // hyprctl -j monitors -> {output: the special workspace shown on it, or
+  // ""}, null if unreadable (by name: Hyprland 0.57 gives no id for none).
+  function notchSpecialsParse(text) {
+    try {
+      var list = JSON.parse(String(text)), out = {}
+      if (!Array.isArray(list)) return null
+      for (var i = 0; i < list.length; i++) {
+        var s = list[i].specialWorkspace
+        out[String(list[i].name)] = s && s.name ? String(s.name) : ""
+      }
+      return out
+    } catch (e) {
+      return null
+    }
+  }
+  // Hyprland's activespecial event ("NAME,OUTPUT", NAME empty when it hides)
+  // -> the map with that output's entry changed.
+  function notchSpecialEvent(specials, data) {
+    var s = String(data), i = s.lastIndexOf(","), out = {}
+    for (var k in specials) out[k] = specials[k]
+    if (i >= 0) out[s.slice(i + 1)] = s.slice(0, i)
+    return out
+  }
+  function notchGapsFor(output, state, specials, flush) {
+    if (flush) return 0
+    var g = state.top, shown = specials[output] || "", rules = state.rules
+    if (rules === null) return shown !== "" ? 0 : g
+    for (var i = 0; i < rules.length; i++) {
+      if (rules[i].name.indexOf("special:") !== 0 || rules[i].name === shown) g = Math.min(g, rules[i].top)
+    }
+    return g
+  }
+  function notchGapsAt(output, sure, seen, specials, flush) {
+    return Math.min(notchGapsFor(output, sure, specials, flush), notchGapsFor(output, seen, specials, flush))
+  }
+  function notchPanelZoneFor(size, gapsTop) {
+    return Math.max(0, size - Math.min(5, Math.max(0, gapsTop)))
+  }
+  // A read's result -> [sure, seen]: a later read sets both; an unreadable
+  // gap keeps the last one seen.
+  function notchGapsMerge(sure, seen, pass) {
+    var now = { top: pass.top >= 0 ? pass.top : seen.top, rules: pass.rules }
+    return [pass.late ? now : sure, now]
+  }
+  function notchReadGaps(late) {
+    if (notchGapsPass !== null) {
+      notchGapsQueued = Math.max(notchGapsQueued, late ? 2 : 1)
+      return
+    }
+    notchGapsPass = { late: late, top: -1, rules: null, specials: null, serial: notchSpecialSerial, left: 3 }
+    notchGapsGuard.restart()
+    notchGapsProc.running = true
+    notchGapRulesProc.running = true
+    notchSpecialsProc.running = true
+  }
+  function notchGapsGot(key, value) {
+    var p = notchGapsPass
+    if (p === null) return
+    p[key] = value
+    if (--p.left <= 0) notchGapsCommit()
+  }
+  function notchGapsCommit() {
+    var p = notchGapsPass
+    if (p === null) return
+    notchGapsPass = null
+    notchGapsGuard.stop()
+    if (p.specials !== null && p.serial === notchSpecialSerial) notchSpecials = p.specials
+    var m = notchGapsMerge(notchGapsSure, notchGapsSeen, p)
+    notchGapsSure = m[0]
+    notchGapsSeen = m[1]
+    if (notchGapsQueued > 0) notchGapsRetry.restart()
+  }
+  function notchGapsCheck(later) {
+    notchReadGaps(false)
+    notchGapsSoon.restart()
+    notchGapsLate.interval = later
+    notchGapsLate.restart()
+  }
+  Process {
+    id: notchGapsProc
+    command: ["hyprctl", "-j", "getoption", "general:gaps_out"]
+    stdout: StdioCollector { onStreamFinished: root.notchGapsGot("top", root.notchGapsParse(text)) }
+  }
+  Process {
+    id: notchGapRulesProc
+    command: ["hyprctl", "-j", "workspacerules"]
+    stdout: StdioCollector { onStreamFinished: root.notchGapsGot("rules", root.notchGapRulesParse(text)) }
+  }
+  Process {
+    id: notchSpecialsProc
+    command: ["hyprctl", "-j", "monitors"]
+    stdout: StdioCollector { onStreamFinished: root.notchGapsGot("specials", root.notchSpecialsParse(text)) }
+  }
+  // A read at once (a smaller gap then counts within a frame or two) and
+  // again 200 ms on: Hyprland's options can settle a moment after its
+  // reload event (Style.qml waits 200 ms). The later read: at start after
+  // flush-bar's last startup pass (6 x 0.5 s), else 1.5 s on.
+  Timer { id: notchGapsSoon; interval: 200; running: true; onTriggered: root.notchReadGaps(false) }
+  Timer { id: notchGapsLate; interval: 3500; running: true; onTriggered: root.notchReadGaps(true) }
+  // A read whose hyprctl never answers ends with what it has.
+  Timer { id: notchGapsGuard; interval: 2000; onTriggered: root.notchGapsCommit() }
+  Timer {
+    id: notchGapsRetry
+    interval: 50
+    onTriggered: {
+      var late = root.notchGapsQueued > 1
+      root.notchGapsQueued = 0
+      root.notchReadGaps(late)
+    }
+  }
+  FileView {
+    id: notchFlushBarFile
+    path: (root.omarchyPath || "/usr/share/omarchy") + "/shell/plugins/flush-bar/manifest.json"
+    printErrors: false
+    onLoaded: root.notchFlushBar = true
+    onLoadFailed: root.notchFlushBar = false
+  }
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      var n = String(event.name)
+      if (n === "configreloaded") root.notchGapsCheck(1500)
+      else if (n === "activespecial") {
+        root.notchSpecialSerial++
+        root.notchSpecials = root.notchSpecialEvent(root.notchSpecials, event.data)
+      }
+    }
+  }
+  Connections {
+    target: root
+    function onRequestedTransparentChanged() { root.notchGapsCheck(1500) }
+    function onPositionChanged() { root.notchGapsCheck(1500) }
+  }
   // FullPanel (OmacVM.app): the camera housing from host.env, in Mac points
   // [left, right, strip, width, height]; [] when this boot is not one.
   property var notchPanel: []
@@ -681,14 +1047,92 @@ def main():
   property bool notchHovering: false
   // Omarchy 4.5 peeks while the pointer is on the bar left of where its
   // centre box starts (the bar window's peekEdge), over widgets too; the
-  // strip does the same with the parked bar's edge.
+  // strip does the same on the parked bar (notchPeeksAt).
   property bool notchPeeking: false
-  function notchPeekEdge() {
+  function notchParkedWindow() {
     var ps = typeof notchBarVariants !== "undefined" ? notchBarVariants.instances : []
     for (var i = 0; i < ps.length; i++)
-      if (ps[i] && ps[i].screen && String(ps[i].screen.name) === notchParkedScreen && ps[i].peekEdge !== undefined)
-        return Number(ps[i].peekEdge)
-    return -1
+      if (ps[i] && ps[i].screen && String(ps[i].screen.name) === notchParkedScreen) return ps[i]
+    return null
+  }
+  function notchPeekEdge() {
+    var w = notchParkedWindow()
+    return w && w.peekEdge !== undefined ? Number(w.peekEdge) : -1
+  }
+  // Omarchy 4.5's indicator peek opens over the bar left of the centre box,
+  // where its own layout keeps the indicators (centerBegin). Where they sit
+  // right of that edge (the right list, as a layout moved from 4.0 keeps
+  // them), it opened far from them and shut on the way there, and their own
+  // hover let go of them as they widened under the pointer (#763, #764). So
+  // the peek also opens over their own place and over the place Skip the
+  // notch opens their hidden ones at (left of the housing); the stretch
+  // between those two (the housing and the widgets there) only keeps an open
+  // peek open, on the way from one to the other, and left of the hidden ones
+  // it shuts. Omarchy's rule counts only in Omarchy's own layout (they sit
+  // inside its stretch and Skip the notch did not move their hidden ones),
+  // and only left of the housing on a bar in the notch strip: nothing opens
+  // under the housing (the pointer cannot be seen there) or in the gap
+  // between it and the centre box. With their hidden ones moved left of the
+  // housing, the left half (the workspaces) opened them from far away.
+  // The bar's hover reads where they are only from notchIndicatorSpans, which
+  // their slot refreshes once a move is done (their row, Skip the notch, a
+  // tray's drawer pushing them, the peek's own opening): read straight from
+  // the items, the peek's own opening changed what it read while it was being
+  // set (QML: "Binding loop detected for property peeking").
+  property var notchIndicatorSpans: ({})
+  function notchIndicatorTick() {
+    // Qt.callLater may run it after a reload took the bar away.
+    if (typeof notchIndicatorSpansNow !== "function") return
+    var now = notchIndicatorSpansNow()
+    if (JSON.stringify(now) !== JSON.stringify(notchIndicatorSpans)) notchIndicatorSpans = now
+  }
+  // The indicators' places on each bar window, by screen name, in the
+  // window's content coordinates: [start, end] of their own place, then
+  // [start, end] of where their hidden ones open when Skip the notch moved
+  // them left of the housing (peekAt; else their own place again), or null
+  // where Skip the notch hides their hidden ones. With none of theirs showing
+  // (nothing active), their own place is where the hidden ones open. A slot
+  // still waiting unseen to show (notchAppearing) has no place yet.
+  function notchIndicatorSpansNow() {
+    var out = {}
+    for (var i = 0; i < moduleSlots.length; i++) {
+      var s = moduleSlots[i]
+      if (!s || !s.notchPeekBlock || s.visible === false || s.notchShiftGone === true || s.notchAppearing === true) continue
+      var w = slotWindow(s), n = w && w.screen && w.contentItem ? String(w.screen.name) : ""
+      if (!n || out.hasOwnProperty(n)) continue
+      var sh = s.notchShift, x = s.mapToItem(w.contentItem, 0, 0).x, f = Number(s.notchPeekFull) || 0
+      if (sh && sh.peekHidden) { out[n] = null; continue }
+      var own = s.width > 0 ? [x, x + s.width]
+        : !(f > 0) ? null
+        : s.fixedEdge === "start" ? [x, x + f] : s.fixedEdge === "end" ? [x - f, x] : [x - f / 2, x + f / 2]
+      // peekAt is on the bar; the slot shows at notchShownX less its width.
+      var at = sh && sh.peekAt !== undefined ? sh.peekAt + x - (s.notchShownX - (s.notchEnd ? s.width : 0)) : NaN
+      out[n] = !isNaN(at) ? (own || [x, x]).concat([at, at + f]) : own ? own.concat(own) : null
+    }
+    return out
+  }
+  // On bar window win in item into's coordinates (the content's when null).
+  function notchIndicatorSpan(win, into, spans) {
+    var n = win && win.screen ? String(win.screen.name) : "", sp = (spans || notchIndicatorSpans)[n]
+    if (!sp) return null
+    var o = into && win.contentItem ? into.mapToItem(win.contentItem, 0, 0).x : 0
+    return [sp[0] - o, sp[1] - o, sp[2] - o, sp[3] - o]
+  }
+  // The peek at pos (into's coordinates) on bar window win; stock: Omarchy's
+  // own answer there; spans: notchIndicatorSpans unless given; held: the
+  // peek is open now (the stretch between their places keeps it open).
+  function notchPeeksAt(win, into, pos, stock, spans, held) {
+    if (!pos || root.vertical || !win) return stock
+    var x = Number(pos.x), sp = notchIndicatorSpan(win, into, spans)
+    if (!sp) return stock
+    if ((x >= sp[0] && x < sp[1]) || (x >= sp[2] && x < sp[3])) return true
+    var a = Math.min(sp[0], sp[2]), b = Math.max(sp[1], sp[3])
+    if (held === true && x >= a && x < b) return true
+    if (win.notchLayout && x >= notchLeft) return false
+    // Not Omarchy's own layout: their own place right of the centre box, or
+    // their hidden ones moved (sp[2..3] is their own place again when not).
+    if (sp[2] !== sp[0] || sp[0] >= Number(win.peekEdge)) return false
+    return stock
   }
   function notchHover(x) {
     // Leaving the strip closes a tray's drawer, as leaving the drawer does.
@@ -707,7 +1151,11 @@ def main():
       var edge = root.notchPeekEdge()
       if (!(edge >= 0)) return "unsupported"
       root.notchHovering = true
-      var peek = x < edge
+      // On the parked copy, at the place of the item the strip shows at x.
+      var px = root.notchParkedX(x)
+      if (isNaN(px)) px = x
+      var peek = root.notchPeeksAt(root.notchParkedWindow(), null, { x: px }, px < edge, root.notchIndicatorSpansNow(),
+                                   root.notchPeeking)
       if (peek !== root.notchPeeking) { root.notchPeeking = peek; root.setBarHovered(peek) }
       return root.notchTargetAt(x, 0) ? "widget" : "free"
     }
@@ -1461,18 +1909,32 @@ def main():
     #    Omarchy's own visible condition stays (from about October 2026 a top
     #    bar also waits for its notch floor), with the remap below added.
     #    Omarchy 4.5 reserves an explicit zone (its window spans the screen):
-    #    a notch role reserves its own window, FullPanel's strip.
+    #    a notch role reserves its own window, FullPanel's bar its strip less
+    #    5 px of the top window gap (notchPanelZone, #758).
+    #    FullPanel's bar reserves less than its window (#758): on 4.0 that
+    #    role alone takes an explicit zone, the others keep Auto.
     auto = ("    exclusionMode: root.barHidden ? ExclusionMode.Ignore : ExclusionMode.Auto\n",
-            "    exclusionMode: barWindow.parked ? ExclusionMode.Ignore : ExclusionMode.Auto\n")
+            """    // omarchy-notch-bar: FullPanel's bar reserves an explicit zone (its strip
+    // less 5 px of the top window gap, notchPanelZone), the other roles Auto.
+    exclusionMode: barWindow.parked ? ExclusionMode.Ignore
+      : barWindow.notchRole === "fullpanel" ? ExclusionMode.Normal : ExclusionMode.Auto
+    // Only in that role: setting exclusiveZone switches Quickshell to Normal.
+    Binding {
+      target: barWindow; property: "exclusiveZone"; value: barWindow.notchPanelZone
+      when: barWindow.notchRole === "fullpanel" && !barWindow.parked; restoreMode: Binding.RestoreNone
+    }
+""")
     zone = ('''    // An explicit zone instead of Auto: the reserved area stays the strip's
     // thickness though the window spans its screen.
     exclusionMode: root.barHidden ? ExclusionMode.Ignore : ExclusionMode.Normal
     exclusiveZone: thickness
 ''', '''    // An explicit zone instead of Auto: the reserved area stays the strip's
     // thickness though the window spans its screen. omarchy-notch-bar: a
-    // notch role's window is its strip.
+    // notch role's window is its strip; FullPanel's bar reserves its strip
+    // less 5 px of the top window gap (notchPanelZone).
     exclusionMode: barWindow.parked ? ExclusionMode.Ignore : ExclusionMode.Normal
-    exclusiveZone: barWindow.notchRole === "" ? thickness : barWindow.parkedSize
+    exclusiveZone: barWindow.notchRole === "" ? thickness
+      : barWindow.notchRole === "fullpanel" ? barWindow.notchPanelZone : barWindow.parkedSize
 ''')
     cutout = "!remapGuard.remapping && (cutoutWaitOver || !cutoutPending)"
     stock_visible = [("!remapGuard.remapping", auto), (cutout, auto), (cutout, zone)]
@@ -1509,6 +1971,10 @@ def main():
                                                        screen ? screen.devicePixelRatio : 1)
     readonly property int parkedSize: notchRole === "parked" ? 1
       : notchRole === "notch" ? notchFit[0] : notchRole === "fullpanel" ? notchPanelFit[0] : STOCK_SIZE
+    // FullPanel's zone: the strip less 5 px of the top window gap (all of it
+    // when the gap is under 5; #758), see root.notchGapsFor; the same in
+    // every role, so it is never written while the role changes.
+    readonly property int notchPanelZone: root.notchPanelZoneFor(notchPanelFit[0], root.notchGapsAt(screen ? screen.name : "", root.notchGapsSure, root.notchGapsSeen, root.notchSpecials, root.notchFlush))
     readonly property real notchPadTop: notchRole === "notch" ? notchFit[1] : notchRole === "fullpanel" ? notchPanelFit[1] : 0
     readonly property real notchPadBottom: notchRole === "notch" || notchRole === "fullpanel"
       ? parkedSize - root.barSize - notchPadTop : 0
@@ -1855,9 +2321,63 @@ EXCLUSION
     // after the other, which once moved the weather and glided it back).
     readonly property var notchPeekActive: notchPeekBlock && notchPeekBlock.parent
       ? root.notchPeekActiveIn(notchPeekBlock.parent) : null
-    readonly property real notchPeekRest: notchPeekActive ? notchPeekActive.implicitWidth : width - notchPeekShown
+    readonly property real notchPeekRest: notchPeekActive ? notchPeekActive.implicitWidth : implicitWidth - notchPeekShown
     property real notchPeekOffset: 0
+    // Its own size at the last place (the size it asks for, which its list
+    // counts; a tray's also with its drawer open): a move it caused itself
+    // is at once, only moves of items pushed by others glide.
     property real notchLastWidth: 0
+    readonly property real notchOpenExtent: activeItem && root.notchIsTray(activeItem) ? Number(activeItem.drawerExtent) || 0 : 0
+    property real notchLastOpen: 0
+    // When it last changed: the layout settles its decisions one round later
+    // (notchSkipKeep), and that move is still its own (100 ms). Any other
+    // move of this item in those 100 ms is at once too.
+    property real notchOwnAt: 0
+    // An item that shows up (its widget had no width, as Omarchy's tray before
+    // its first app) waits unseen at its place until that place has been
+    // quiet for 150 ms, then shows there. Only its own place counts (other
+    // items changing size do not), and it shows after 1 s at the latest.
+    // Omarchy's tray waits until its size with the drawer open has been quiet
+    // for 1.5 s (8 s at the most), also before the bar settled (login): apps
+    // that start a second or so apart each grow its drawer, not its place, so
+    // it showed right of the housing and the 4th or 5th moved it left (#757).
+    // Now it shows once, on the side it stays on; meanwhile its place on the
+    // bar is empty and it takes no clicks.
+    // Never on a drag (the widget keeps its width) or the indicators' peek or
+    // a drawer's slide (they never start from no width).
+    readonly property real notchContentWidth: NOTCH_CONTENT_WIDTH
+    property real notchLastContent: 0
+    property bool notchAppearing: false
+    property real notchAppearEdge: 0
+    property bool notchAppearGone: false
+    readonly property bool notchTrayAppear: !!activeItem && root.notchIsTray(activeItem)
+    // Its width with the drawer open (the part of the drawer that shows less
+    // the whole drawer): a slide does not change it, a new app does. The list
+    // reads the tray's drawer before this does, so a new app that leaves its
+    // place as it was comes after the layout's round (no new notchShift): its
+    // own change starts the wait again.
+    readonly property real notchOpenWidth: notchContentWidth + notchOpenExtent
+      - (notchTrayAppear ? Number(activeItem.revealExtent) || 0 : 0)
+    onNotchOpenWidthChanged: if (notchAppearing && notchTrayAppear) notchShowEnd.restart()
+    Timer {
+      id: notchShowEnd
+      interval: slot.notchTrayAppear ? 1500 : 150
+      onTriggered: slot.notchShowNow()
+    }
+    Timer {
+      id: notchShowLimit
+      interval: slot.notchTrayAppear ? 8000 : 1000
+      onTriggered: slot.notchShowNow()
+    }
+    function notchShowNow() {
+      if (!notchAppearing) return
+      notchShowEnd.stop()
+      notchShowLimit.stop()
+      notchFade.enabled = true
+      notchAppearing = false
+      // While Omarchy makes the list again, onNotchHoldChanged places it.
+      if (!notchHold) notchSettle()
+    }
     readonly property real notchPeekDx: notchShift && notchShift.peekAt !== undefined
       ? notchShift.peekAt - (notchShownX - (notchEnd ? width : 0) + notchPeekOffset) : 0
     Translate { id: notchPeekMove; x: slot.notchPeekDx }
@@ -1895,8 +2415,8 @@ EXCLUSION
     readonly property bool notchEnd: region === "right"
     function notchEdge(s) { return s.n + s.x + (notchEnd ? width : 0) }
     transform: Translate { x: slot.notchShift ? slot.notchShownX - (slot.notchEnd ? slot.width : 0) - slot.notchPlaceX : 0 }
-    opacity: slot.notchShiftGone || slot.notchNew ? 0 : 1
-    enabled: !slot.notchShiftGone
+    opacity: slot.notchShiftGone || slot.notchNew || slot.notchAppearing ? 0 : 1
+    enabled: !slot.notchShiftGone && !slot.notchAppearing
     Behavior on notchShownX {
       id: notchSlide
       enabled: false
@@ -1916,10 +2436,15 @@ EXCLUSION
       else if (parent && typeof parent.ensurePolished === "function") parent.ensurePolished()
       var s = notchShift
       var gone = !!(s && s.hidden), animate = !!(s && s.animate)
-      // The indicators opening or closing their hidden ones: their own row
-      // moves inside them at once, so they do not slide either.
-      var peeked = notchPeekFull > 0 && width !== notchLastWidth
-      notchLastWidth = width
+      // Its own size changed (the indicators' peek, a tray's new app, a
+      // widget that grew): it takes its new place at once, as its own row
+      // moves inside it at once.
+      if (notchPlaced && (implicitWidth !== notchLastWidth || notchOpenExtent !== notchLastOpen)) notchOwnAt = Date.now()
+      var own = Date.now() - notchOwnAt < 100
+      var appeared = notchPlaced && notchLastContent <= 0 && notchContentWidth > 0
+      notchLastWidth = implicitWidth
+      notchLastOpen = notchOpenExtent
+      notchLastContent = notchContentWidth
       var placed = notchPlaced
       notchPlaced = !!s
       notchFade.enabled = placed && animate
@@ -1955,8 +2480,29 @@ EXCLUSION
         return
       }
       if (gone !== notchShiftGone) notchShiftGone = gone
+      if (notchAppearing || (appeared && (animate || notchTrayAppear))) {
+        // It showed up: unseen at its place until that is quiet (notchShowEnd),
+        // at most 1 s (notchShowLimit). Only a change of its own place (its
+        // kept edge, or hidden) starts the 150 ms again; for the tray also a
+        // change of its size with the drawer open (onNotchOpenWidthChanged).
+        var edge = notchEdge(s)
+        notchFade.enabled = false
+        if (!notchAppearing) {
+          notchAppearing = true
+          notchShowLimit.restart()
+          notchShowEnd.restart()
+        } else if (Math.abs(edge - notchAppearEdge) > 0.01 || gone !== notchAppearGone) notchShowEnd.restart()
+        notchAppearEdge = edge
+        notchAppearGone = gone
+        notchSlide.enabled = false
+        notchPlaceX = s.n
+        notchShiftX = s.x
+        notchShownX = notchEdge(s)
+        notchPeekApply()
+        return
+      }
       var ours = s.x !== 0 || (placed ? notchShiftX !== 0 : !!(was && was.ours))
-      var glide = animate && ours && !peeked, running = notchSlideRun.running
+      var glide = animate && ours && !own, running = notchSlideRun.running
       if (!running) notchSlide.enabled = false
       notchPlaceX = s.n
       if (!placed) notchShownX = glide && was !== undefined ? was.x : notchEdge(s)
@@ -1976,12 +2522,15 @@ EXCLUSION
       if (!!s.hidden !== notchShiftGone) notchShiftGone = !!s.hidden
       var to = notchEdge(s)
       if (Math.abs(notchShownX - to) > 0.01) {
-        notchSlide.enabled = !!s.animate
+        notchSlide.enabled = !!s.animate && Date.now() - notchOwnAt >= 100
         notchShownX = to
       }
       if (notchShown) notchShown[moduleName] = { x: to, ours: s.x !== 0 || s.hidden === true }
     }
 '''
+    # The widget's own width: 4.5's slot has it apart from the length it asks
+    # for (which a drag or a removal changes); 4.0's slot is its widget's.
+    slot_body = slot_body.replace("NOTCH_CONTENT_WIDTH", "widgetWidth" if form45 else "implicitWidth")
     text = replace_variant(text, [(h, h + slot_body) for h in slot_heads], "the module slot")
     text = replace_once(text, '''    z: modulePointer.dragging ? 100 : 0
 ''', '''    // omarchy-notch-bar: while the indicators' hidden ones open elsewhere,
@@ -1990,6 +2539,14 @@ EXCLUSION
     // expander and the weather keep their own hover and clicks.
     z: modulePointer.dragging ? 100 : (slot.notchShift && slot.notchShift.peekAt !== undefined ? -1 : 0)
 ''')
+
+    # 10. Omarchy 4.5's indicator peek where the indicators are (#763, #764).
+    if form45:
+        text = peek_45(text)
+
+    # 11. Omarchy 4.5: the NOTCH bar's workspaces from the copy (#760).
+    if form45:
+        text = workspaces_45(text)
 
     open(path, "w").write(text)
     print("patched")

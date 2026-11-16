@@ -630,15 +630,27 @@ exec 3<&-
 export OMACVM_KERNEL_NEW=keep OMACVM_MOVE_RUN=1 OMACVM_APPLY_SSH_SECONDS=$SSH_SECONDS
 # Test rows: the Mac's helpers left as they are (as create-vm.sh's OMACVM_CREATE_NO_MAC).
 APPLY_ARGS=(); [[ ${OMACVM_MOVE_NO_MAC:-} == 1 ]] && APPLY_ARGS=(--no-mac)
-# Why apply stopped, in its own words (its last ERROR line), for the reason.
-apply_why() { LC_ALL=C sed -n 's/^ERROR: //p' "$LOG/move-apply.log" 2>/dev/null | printable | tail -1 | cut -c1-240 | sed 's/\.$//'; }
-apply_failed() {   # STEP CODE TAIL: a VM that stopped is a cut-off; else apply's own reason
+# Why apply stopped, in its own words (its last ERROR line, or apply.sh's own
+# "error:" line, which names the part of the copy that failed: #771), for the reason.
+apply_why() { printable 2>/dev/null < "$LOG/move-apply.log" | LC_ALL=C sed -n -E 's/^(ERROR|error): //p' | tail -1 | cut -c1-240 | sed 's/\.$//'; }
+# Each apply's log is kept (#771): the one before goes to move-apply.log.1, older
+# ones move up to .9 (a move cut and resumed often runs 9 or 10 applies), so a
+# Resume no longer writes over the apply that failed.
+keep_apply_log() {
+  local f=$LOG/move-apply.log n
+  [[ -s $f ]] || return 0
+  for n in 8 7 6 5 4 3 2 1; do [[ -f $f.$n ]] && mv -f "$f.$n" "$f.$((n + 1))"; done
+  mv -f "$f" "$f.1"
+}
+apply_failed() {   # STEP CODE TAIL EXIT: a VM that stopped is a cut-off; else apply's own reason
+  printf 'move-vm.sh: apply-vm.sh exit %s\n' "${4:-?}" >> "$LOG/move-apply.log"
   qemu_running || cut_off "$1" "The VM stopped during the move (log: $LOG/move-console.log)." vm-stopped
   local w; w=$(apply_why)
   fail "$1" "$(disk_why || echo "OmacVM did not update in the VM${w:+: $w} (log: $LOG/move-apply.log). $3")" 1 "$2"
 }
+keep_apply_log
 run_logged "$LOG/move-apply.log" "$HERE/apply-vm.sh" "$VM_DIR" ${APPLY_ARGS[@]+"${APPLY_ARGS[@]}"} ||
-  apply_failed 4 apply "Nothing of Omarchy was changed."
+  apply_failed 4 apply "Nothing of Omarchy was changed." $?
 rc=0; vtry "test -x $G" > /dev/null 2>&1 || rc=$?
 (( rc != 255 )) || ssh_lost 4 "checking OmacVM's move in it"
 (( rc == 0 )) || fail 4 "This VM's OmacVM has no Omarchy move (log: $LOG/move-apply.log)." 1 guest-old
@@ -803,8 +815,9 @@ vm_restart() {   # STEP
 
 step 6 "Update OmacVM again"
 vm_restart 6
+keep_apply_log
 run_logged "$LOG/move-apply.log" "$HERE/apply-vm.sh" "$VM_DIR" ${APPLY_ARGS[@]+"${APPLY_ARGS[@]}"} ||
-  apply_failed 6 apply-after "Resume tries again."
+  apply_failed 6 apply-after "Resume tries again." $?
 
 step 7 "Restart and check"
 vm_restart 7
