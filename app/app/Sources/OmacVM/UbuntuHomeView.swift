@@ -258,12 +258,13 @@ struct UbuntuHomeView: View {
         }
     }
 
-    private func refresh() {
-        let candidates = fixtures ?? VMConfig.all().filter {
-            (try? String(contentsOf: $0.folder.appendingPathComponent("guest-os"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == "ubuntu"
-        }
+    static func discoveredVMs(roots: [URL] = Paths.vmsRoots) -> [VMConfig] {
         var seen: Set<String> = []
-        vms = candidates.filter { seen.insert($0.folder.standardizedFileURL.resolvingSymlinksInPath().path).inserted }
+        return VMConfig.all(roots: roots).filter { seen.insert($0.folder.standardizedFileURL.resolvingSymlinksInPath().path).inserted }
+    }
+
+    private func refresh() {
+        vms = fixtures ?? Self.discoveredVMs()
         if selectedFolder == nil { selectedFolder = vms.first(where: { $0.folder == state.config.folder })?.folder ?? vms.first?.folder }
         if fixtures != nil { statuses = Dictionary(uniqueKeysWithValues: vms.map { ($0.folder, previewRunning ? "Desktop running" : "Stopped") }) }
     }

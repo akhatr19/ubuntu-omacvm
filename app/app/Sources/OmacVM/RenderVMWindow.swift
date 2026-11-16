@@ -318,6 +318,10 @@ enum RenderVMWindow {
                     }
                 }
             }
+            let discovered = UbuntuHomeView.discoveredVMs(roots: [tmp, tmp])
+            let profiles = Set(discovered.map(\.guest))
+            note("Workbench discovery: Ubuntu, Omarchy and custom guests, without duplicate folders",
+                 fail: profiles != Set(GuestProfile.allCases) || discovered.count != 3)
             let id = String(repeating: "a", count: 32)
             let dataFolder = tmp.appendingPathComponent(".ubuntu-data/" + id)
             try? FileManager.default.createDirectory(at: dataFolder, withIntermediateDirectories: true)
