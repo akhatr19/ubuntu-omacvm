@@ -12,6 +12,9 @@ struct UbuntuCheckpoint: Decodable, Identifiable {
 
 struct UbuntuSnapshotsView: View {
     let config: VMConfig
+    var embedded = false
+    var onChanged: () -> Void = {}
+    var onBusy: ((Bool) -> Void)? = nil
     var previewRows: [UbuntuCheckpoint]? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var job = DeveloperJob()
@@ -26,7 +29,7 @@ struct UbuntuSnapshotsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("Snapshots — \(config.name)").font(.title2.bold()); Spacer(); Button("Refresh") { refresh() }.disabled(job.busy); Button("Close") { dismiss() }.disabled(job.busy) }
+            HStack { Text("Snapshots — \(config.name)").font(.title2.bold()); Spacer(); Button("Refresh") { refresh() }.disabled(job.busy); if !embedded { Button("Close") { dismiss() }.disabled(job.busy) } }
             Text("Disk checkpoints include Ubuntu, installed tools, files and compute/display settings. Stop the VM first. RAM and shared Mac data are excluded; Mac sharing/network choices stay local.").foregroundStyle(.secondary)
             if running { Text("Close this panel and stop the VM from its card before creating or restoring a checkpoint.").foregroundStyle(.orange) }
             HStack { TextField("Checkpoint name", text: $name); Button("Create Checkpoint") { action("create", extra: ["--name", name]) }.disabled(running || loading || job.busy || name.isEmpty) }
@@ -46,7 +49,7 @@ struct UbuntuSnapshotsView: View {
             Text("RAM save/resume is unavailable with this accelerated GPU runtime: it rejects device migration.").font(.caption).foregroundStyle(.secondary)
             if job.busy { ProgressView("Working on VM disks…") }
             ScrollView { Text(job.output).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 80)
-        }.padding(22).frame(width: 780, height: 620)
+        }.padding(22).frame(width: embedded ? nil : 780, height: embedded ? nil : 620)
         .onAppear {
             if let previewRows { rows = previewRows; head = previewRows.first?.id; running = false; loading = false }
             else { refresh() }
@@ -63,6 +66,7 @@ struct UbuntuSnapshotsView: View {
         .confirmationDialog("Restore this checkpoint? The current disk is preserved first. Shared Mac data is unchanged.", isPresented: $restoring) {
             Button("Preserve Current State and Restore") { if let selected { action("restore", extra: ["--id", selected]) } }
         }
+        .onChange(of: job.busy) { _, value in onBusy?(value) }
         .interactiveDismissDisabled(job.busy)
     }
     private func refresh() {
@@ -83,6 +87,7 @@ struct UbuntuSnapshotsView: View {
                   let objects = result["checkpoints"], let encoded = try? JSONSerialization.data(withJSONObject: objects),
                   let decoded = try? JSONDecoder().decode([UbuntuCheckpoint].self, from: encoded) else { return }
             rows = decoded; head = result["head"] as? String
+            if action != "list" { onChanged() }
             job.output = action == "list" ? "Select a checkpoint to restore or create a new VM branch." : (action == "fork" ? "Fork created. Close this panel to find the new VM on the home screen." : "Completed. Your checkpoint history is updated.")
         }
     }

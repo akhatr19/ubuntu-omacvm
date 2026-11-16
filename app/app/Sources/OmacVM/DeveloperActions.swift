@@ -76,7 +76,7 @@ struct DeveloperRow: View {
         }
         .sheet(isPresented: $network) { UbuntuPortsView(state: state, config: state.config) }
         SettingRow(title: "Environments", subtitle: "Create and manage multiple Ubuntu environments. Headless VMs can run at the same time.", probe: "ubuntu-environments") {
-            Button("Open VMs & Projects") { state.showHome = true }
+            Button("Open Workbench") { state.showHome = true }
         }
         if DeveloperActions.name(state.config) != nil {
             SettingRow(title: "Developer environment", subtitle: "Linux projects, editor connections and localhost ports use the same environment.", probe: "ubuntu-developer") {

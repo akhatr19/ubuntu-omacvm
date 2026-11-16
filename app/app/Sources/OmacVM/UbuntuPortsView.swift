@@ -5,6 +5,7 @@ import SwiftUI
 struct UbuntuPortsView: View {
     @ObservedObject var state: AppState
     let config: VMConfig
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
     @State private var settings = DeveloperNetwork()
     @State private var livePorts: [DeveloperPort] = []
@@ -24,7 +25,7 @@ struct UbuntuPortsView: View {
                 Text("Ports & SSH — \(config.name)").font(.title2.bold())
                 Spacer()
                 Button("SSH Keys & Settings…") { editing = true }
-                Button("Close") { dismiss() }
+                if !embedded { Button("Close") { dismiss() } }
             }
             Text("Only this Mac means localhost. LAN sharing uses your Mac's IP and a separate port for each VM.").foregroundStyle(.secondary)
             if let problem { Text(problem).foregroundStyle(.red) }
@@ -76,7 +77,7 @@ struct UbuntuPortsView: View {
                 }
             }
             Text("Open uses HTTP; for databases and other protocols use the displayed address in your client. A successful local test does not verify access from another LAN device.").font(.caption).foregroundStyle(.secondary)
-        }.padding(22).frame(width: 760, height: 620)
+        }.padding(22).frame(width: embedded ? nil : 760, height: embedded ? nil : 620)
         .task {
             while !Task.isCancelled {
                 refresh()

@@ -58,7 +58,7 @@ final class DeveloperJob: ObservableObject {
                     try reader.seek(toOffset: size > 32768 ? size - 32768 : 0)
                     let log = String(decoding: reader.readDataToEndOfFile(), as: UTF8.self)
                     return (status == 0 ? "Completed.\n" : "Failed (\(status)).\n") + log
-                } catch { return error.localizedDescription }
+                } catch { return "Failed.\n" + error.localizedDescription }
             }.value
             output = result; busy = false; finished?()
         }

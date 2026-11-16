@@ -106,7 +106,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DistributedNotificationCenter.default().postNotificationName(
                     Self.startRequest, object: vm, userInfo: nil, deliverImmediately: true)
             }
-            (Self.qemuApp ?? other).activate()
+            if Product.isUbuntu && !args.contains("--start") {
+                DistributedNotificationCenter.default().postNotificationName(Self.launcherRequest, object: nil, userInfo: nil, deliverImmediately: true)
+                other.activate()
+            } else { (Self.qemuApp ?? other).activate() }
             NSApp.terminate(nil)
             return
         }
@@ -114,6 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: Self.startRequest, object: nil, queue: .main) { [weak self] note in
             let name = note.object as? String ?? ""
             MainActor.assumeIsolated { self?.startRequested(name) }
+        }
+        DistributedNotificationCenter.default().addObserver(forName: Self.launcherRequest, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.state.showHome = true; self?.showWindow() }
         }
         // The built-in display's notch, kept for VM starts with the lid closed
         // (#716): now, and whenever the displays change (the lid opened while
@@ -265,6 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Per bundle id: a test build (build-app.sh --id) does not take the
     /// installed app's start requests.
+    static let launcherRequest = Notification.Name("\(Bundle.main.bundleIdentifier ?? "org.omacvm.app").launcher")
     static let startRequest = Notification.Name("\(Bundle.main.bundleIdentifier ?? "org.omacvm.app").start")
     static let updateRequest = Notification.Name("\(Bundle.main.bundleIdentifier ?? "org.omacvm.app").update-now")
     static let restartRequest = Notification.Name("\(Bundle.main.bundleIdentifier ?? "org.omacvm.app").update-restart")
@@ -385,7 +392,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if runner?.isRunning == true { Self.qemuApp?.activate() } else { showWindow() }
+        if Product.isUbuntu { state.showHome = true; showWindow() }
+        else if runner?.isRunning == true { Self.qemuApp?.activate() } else { showWindow() }
         return true
     }
 
@@ -414,7 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (WindowSize.defaultHeight), centred on the built-in display. Left where the user put it (and as tall) while it stays
         // open, sits in the Dock, or the app was hidden (Cmd-H).
         if let w = window, let c = centring, c.needsPlace, !w.isMiniaturized {
-            w.setContentSize(NSSize(width: WindowSize.width, height: Self.defaultHeight))
+            w.setContentSize(NSSize(width: Self.initialWindowWidth, height: Self.defaultHeight))
             c.place()
         }
         window?.makeKeyAndOrderFront(nil)
@@ -424,8 +432,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The app's window (docs/design/settings-3.1): 800 pt wide, only the
     /// height changes; the header sits under a transparent title bar, and an
     /// empty unified toolbar gives the window's buttons the header's height.
+    private static var initialWindowWidth: CGFloat { Product.isUbuntu && Installer.isInstalled ? 1000 : CGFloat(WindowSize.width) }
+
     static func makeWindow<V: View>(_ root: V) -> NSWindow {
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: WindowSize.width, height: defaultHeight),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: initialWindowWidth, height: defaultHeight),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                          backing: .buffered, defer: false)
         w.title = Product.name + (Product.isUbuntu ? " · " + Product.buildLabel : "")
@@ -437,12 +447,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         w.toolbarStyle = .unified
         w.collectionBehavior.insert(.fullScreenNone)
         w.contentMinSize = NSSize(width: WindowSize.width, height: WindowSize.minHeight)
-        w.contentMaxSize = NSSize(width: WindowSize.width, height: 100_000)
+        w.contentMaxSize = NSSize(width: Product.isUbuntu && Installer.isInstalled ? 1600 : WindowSize.width, height: 100_000)
         w.delegate = FixedWidthWindow.shared
         let host = NSHostingController(rootView: root)
         host.sizingOptions = []
         w.contentViewController = host
-        w.setContentSize(NSSize(width: WindowSize.width, height: defaultHeight))
+        w.setContentSize(NSSize(width: initialWindowWidth, height: defaultHeight))
         w.isReleasedWhenClosed = false
         w.isRestorable = false
         return w
@@ -458,6 +468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         static let shared = FixedWidthWindow()
 
         func windowDidResize(_ note: Notification) {
+            if Product.isUbuntu && Installer.isInstalled { return }
             guard let w = note.object as? NSWindow, abs(w.frame.width - WindowSize.width) > 0.5 else { return }
             let fixed = WindowSize.fixedWidth(x: w.frame.origin.x, width: w.frame.width)
             var f = w.frame
@@ -646,9 +657,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // launcher steps out of the Dock first. If QEMU came up while the
         // launcher still held the icon, the Dock gave QEMU a second one beside
         // a pinned OmacVM (MacBook Air, macOS 26.6.2).
-        window?.orderOut(nil)
-        centring?.taken()
-        NSApp.setActivationPolicy(.accessory)
+        if Product.isUbuntu {
+            state.showHome = true
+        } else {
+            window?.orderOut(nil)
+            centring?.taken()
+            NSApp.setActivationPolicy(.accessory)
+        }
         // Set before the start: r.start() waits on small helper processes,
         // which runs the main loop, so a QEMU that ends at once (its disk
         // locked elsewhere) has its exit handled before start() returns, and
@@ -936,12 +951,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func showWorkbench(_ sender: Any?) {
+        state.showHome = true
+        showWindow()
+    }
+
     func buildMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
         appMenu.delegate = self
+        if Product.isUbuntu { appMenu.addItem(withTitle: "Show Workbench", action: #selector(showWorkbench(_:)), keyEquivalent: "1") }
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
         let back = appMenu.addItem(withTitle: "Go Back…", action: #selector(goBack(_:)), keyEquivalent: "")
         back.tag = Self.goBackTag

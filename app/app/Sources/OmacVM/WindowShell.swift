@@ -49,7 +49,7 @@ struct WindowShell<Header: View, Notices: View, Content: View>: View {
                 SpyScroll(nav: nav) { content }
             }
         }
-        .frame(width: CGFloat(WindowSize.width))
+        .frame(width: Product.isUbuntu ? nil : CGFloat(WindowSize.width))
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Look.window, ignoresSafeAreaEdges: [])
         .ignoresSafeArea()

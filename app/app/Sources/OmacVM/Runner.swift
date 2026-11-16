@@ -497,7 +497,8 @@ final class Runner {
         defer { if !qemuRuns { drop?.stop(); drop = nil; dropPeer = nil } }
         p.arguments = arguments()
         var env = ProcessInfo.processInfo.environment
-        env["OMACVM_PRODUCT_NAME"] = Product.name
+        env["OMACVM_PRODUCT_NAME"] = Product.isUbuntu ? "UbuntuVM Desktop" : Product.name
+        if Product.isUbuntu { env["OMACVM_DOCK_SEPARATE"] = "1" }
         // QEMU's FullPanel (omacvm-cocoa-fullpanel.patch): only for this start.
         if notchStart.fullPanel { env["OMACVM_FULLPANEL"] = "1" } else { env.removeValue(forKey: "OMACVM_FULLPANEL") }
         // The panel its notch was measured on: a full screen entered on another

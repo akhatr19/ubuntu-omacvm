@@ -412,7 +412,7 @@ struct SetupView: View {
             WindowHeader(title: "New \(Product.guestName) VM", facts: Product.isUbuntu ? "Ubuntu Desktop 26.10 ARM64 with GNOME and accelerated graphics." : "Arch Linux ARM with Omarchy, made into a VM on this Mac.") {
                 AppIconButton()
             } trailing: {
-            if Product.isUbuntu { Button("VMs & Projects") { state.showHome = true } }
+            if Product.isUbuntu { Button("Workbench") { state.showHome = true } }
                 // A VM copied here or on another drive: show it instead.
                 Button("Open Existing VM…") { state.openExisting() }
                     .disabled(state.storage.moving != nil)

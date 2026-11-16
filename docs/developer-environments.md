@@ -2,12 +2,24 @@
 
 ## VMs and Projects in the app
 
-The UbuntuVM home screen has two views. **VMs** lists Ubuntu machines with Start,
-Stop, Terminal, Open Desktop, VS Code and a More menu for settings and ports.
-**Projects** remembers Linux folders and the VM/editor each uses. Several projects
-can share a VM; a project can instead get separate pinned tools through
-**New VM → Reproducible Developer Environment → Create & Open Project**. That
-flow copies the selected Mac project's files once after provisioning.
+The SwiftUI Workbench keeps **Projects** and your VM list in the sidebar. Select
+a VM to see Overview, Projects, Network & SSH, Files, Snapshots, Resources and
+Input in one place. The launcher remains available while Ubuntu runs. Opening
+UbuntuVM from its Dock icon shows the Workbench; **Show Desktop** explicitly
+focuses the separate UbuntuVM Desktop window. Start requests from the CLI remain
+explicit. Closing the launcher window leaves the VM running; quitting the app
+still follows its shutdown behavior.
+
+**App Settings → Default editor** detects VS Code and VS Code Insiders, or lets
+you choose another installed application. Install Remote - SSH in that chosen
+editor. The same choice is used by project buttons and `uvm code`; `UVM_CODE`
+remains an explicit command-line override. Missing editor installations fail
+before a stopped VM is started. Editor preferences are stored in UbuntuVM's
+Application Support `editor.json` (or `UVM_HOME` when set).
+
+Several projects can share a VM, or use separate pinned tools through
+**New VM → Reproducible Environment → Create & Open Project**. That flow copies
+the selected Mac project's files once after provisioning.
 
 **Add Project** can attach an existing Linux folder, clone an HTTPS/SSH Git
 repository, import a Mac folder, or create an empty folder. Opening a project

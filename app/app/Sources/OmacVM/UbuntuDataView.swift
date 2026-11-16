@@ -39,6 +39,8 @@ enum UbuntuDriveMount {
 
 struct UbuntuDataView: View {
     let config: VMConfig
+    var embedded = false
+    var onBusy: ((Bool) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var job = DeveloperJob()
     @State private var password = ""
@@ -54,7 +56,7 @@ struct UbuntuDataView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("Files & Sync — \(config.name)").font(.title2.bold()); Spacer(); Button("Close") { dismiss() }.disabled(busy) }
+            HStack { Text("Files & Sync — \(config.name)").font(.title2.bold()); Spacer(); if !embedded { Button("Close") { dismiss() }.disabled(busy) } }
             Text("Finder access and sync start Ubuntu when needed. Disk checkpoints are separate and require Ubuntu to be stopped.").foregroundStyle(.secondary)
             if let problem { Text(problem).foregroundStyle(.red).textSelection(.enabled) }
             ScrollView {
@@ -114,7 +116,7 @@ struct UbuntuDataView: View {
             }
             if busy { ProgressView(mounting ? "Connecting Finder…" : "Preparing Ubuntu files…") }
             ScrollView { Text(job.output).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 90)
-        }.padding(22).frame(width: 780, height: 680)
+        }.padding(22).frame(width: embedded ? nil : 780, height: embedded ? nil : 680)
         .onAppear { linux = "/home/\(config.user)/Projects"; macPath = MacFolder.path(config) }
         .task {
             while !Task.isCancelled {
@@ -124,6 +126,7 @@ struct UbuntuDataView: View {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+        .onChange(of: busy) { _, value in onBusy?(value) }
         .interactiveDismissDisabled(busy)
     }
     private func args(_ action: String) -> [String] {

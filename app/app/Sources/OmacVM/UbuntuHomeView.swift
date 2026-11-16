@@ -10,54 +10,96 @@ struct UbuntuHomeView: View {
     @State private var statuses: [URL: String] = [:]
     @State private var stopping: Set<URL> = []
     @State private var starting: Set<URL> = []
-    @State private var network: VMConfig?
-    @State private var snapshot: VMConfig?
-    @State private var dataVM: VMConfig?
+    @State private var selectedFolder: URL?
+    @State private var section = VMSection.overview
+    @State private var editorSettings = false
+    @State private var editorLabel = UbuntuEditorSettings.label
+    @State private var detailBusy = false
+    @State private var activityExpanded = false
+    @State private var pendingDelete: VMConfig?
+    @State private var deleteBusy = false
+    private enum VMSection: String, CaseIterable {
+        case overview = "Overview", projects = "Projects", network = "Network & SSH", files = "Files", snapshots = "Snapshots", resources = "Resources", input = "Input"
+    }
+    private var selectedVM: VMConfig? { vms.first { $0.folder == selectedFolder } ?? vms.first }
+    private var busy: Bool { job.busy || detailBusy }
+
     @State private var adding = false
     @State private var creating = false
     @State private var problem: String?
     @State private var containerProjects: Set<String> = []
     var fixtures: [VMConfig]? = nil
     var previewProjects: [UbuntuProject]? = nil
+    var previewSection: String? = nil
+    var previewRunning = false
 
     var body: some View {
-        WindowShell {
+        VStack(spacing: 0) {
             WindowHeader(title: "UbuntuVM", facts: "Your Linux machines and projects") { AppIconButton() } trailing: {
-                Button("Refresh") { refresh() }
-                Button("Add Project…") { tab = 1; adding = true }.disabled(vms.isEmpty || job.busy)
+                Button("App Settings…") { editorSettings = true }.disabled(busy)
+                Button("Add Project…") { tab = 1; adding = true }.disabled(vms.isEmpty || busy)
                 Menu("New VM") {
                     Button("Ubuntu Desktop from ISO…") {
                         guard !state.vmRunning() else { problem = "Stop the current desktop before installing another."; return }
                         state.config = VMConfig(); state.screen = .setup; state.showHome = false
                     }
-                    Button("Reproducible Developer Environment…") { creating = true }
+                    Button("Reproducible Environment…") { creating = true }
                     Button("Open Existing VM…") { state.openExisting(); refresh() }
-                }.disabled(job.busy)
+                }.disabled(busy)
             }
-        } notices: {
             if let problem { MessageStrip(text: problem, error: true) { self.problem = nil } }
             if let message = state.message { MessageStrip(text: message, error: !state.messageIsInfo) { state.message = nil } }
-        } content: {
-            Picker("View", selection: $tab) { Text("VMs").tag(0); Text("Projects").tag(1) }
-                .pickerStyle(.segmented).labelsHidden().padding(.bottom, 16)
-            if tab == 0 {
-                if vms.isEmpty { Text("No Ubuntu VMs yet. Choose New VM to install Ubuntu or create a reproducible environment.").padding(.vertical, 20) }
-                ForEach(vms, id: \.folder) { vm in vmCard(vm) }
-            } else {
-                Text("Projects live inside Ubuntu. Opening a project starts its VM and waits for the connection. Multiple projects can share one VM.")
-                    .font(.callout).foregroundStyle(.secondary).padding(.bottom, 14)
-                if (previewProjects ?? projects.entries).isEmpty { Text("Choose Add Project to clone a repository, import a Mac folder, or remember an existing Linux folder.").padding(.vertical, 20) }
-                ForEach(previewProjects ?? projects.entries) { project in projectCard(project) }
+            Divider()
+            HStack(spacing: 0) {
+                sidebar.frame(width: 165)
+                Divider()
+                VStack(alignment: .leading, spacing: 0) {
+                    if tab == 1 {
+                        ScrollView { VStack(alignment: .leading, spacing: 14) {
+                            Text("Projects").font(.title.bold())
+                            Text("Opening a project starts its VM if needed, waits for SSH, then opens your chosen editor.").foregroundStyle(.secondary)
+                            if shownProjects.isEmpty { Text("Add a project to clone a repository, import a Mac folder, or remember a Linux folder.").padding(.vertical) }
+                            ForEach(shownProjects) { project in projectCard(project) }
+                        }.padding(22) }
+                    } else if let vm = selectedVM {
+                        vmHeader(vm).padding(20)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 4)], spacing: 4) {
+                            ForEach(VMSection.allCases, id: \.self) { item in
+                                Button { section = item } label: {
+                                    Text(item.rawValue).font(.system(size: 12, weight: section == item ? .semibold : .regular))
+                                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                                        .background(section == item ? Color.accentColor.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                                }.buttonStyle(.plain)
+                            }
+                        }.padding(.horizontal, 20).disabled(busy)
+                        Divider().padding(.top, 8)
+                        vmContent(vm).id(vm.folder)
+                    } else {
+                        ContentUnavailableView("No Ubuntu VMs", systemImage: "desktopcomputer", description: Text("Choose New VM to install Ubuntu or create a developer environment."))
+                    }
+                    if job.busy { ProgressView("Preparing Ubuntu…").padding(12) }
+                    if !job.output.isEmpty {
+                        DisclosureGroup("Activity", isExpanded: $activityExpanded) {
+                            ScrollView { Text(job.output).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 100)
+                        }.padding(12)
+                    }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            if job.busy { ProgressView("Starting Ubuntu / preparing your project…").padding(.top, 12) }
-            if !job.output.isEmpty {
-                ScrollView { Text(job.output).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-                    .frame(height: 110).padding(.top, 12)
-            }
+            Divider()
+            HStack { Text("Opening UbuntuVM shows this launcher. VMs keep running independently."); Spacer(); Text(Product.buildLabel) }
+                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.vertical, 9)
         }
-        .onAppear { refresh(); if fixtures != nil { tab = previewProjects == nil ? 0 : 1 } }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh() }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .ignoresSafeArea()
+        .tint(Color(red: 0.78, green: 0.30, blue: 0.12))
+        .onChange(of: job.busy) { _, value in
+            if value { activityExpanded = true }
+            else if job.output.hasPrefix("Failed") { problem = String(job.output.suffix(2000)) }
+        }
+        .onAppear { refresh(); if fixtures != nil { tab = previewProjects == nil ? 0 : 1 }; if let previewSection, let value = VMSection(rawValue: previewSection) { tab = 0; section = value } }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh(); editorLabel = UbuntuEditorSettings.label }
         .task {
+            guard fixtures == nil else { return }
             while !Task.isCancelled {
                 let machines = vms
                 let snapshot = await Task.detached { () -> [URL: String] in
@@ -77,73 +119,130 @@ struct UbuntuHomeView: View {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-        .sheet(item: $network) { vm in UbuntuPortsView(state: state, config: vm) }
-        .sheet(item: $snapshot, onDismiss: refresh) { vm in UbuntuSnapshotsView(config: vm) }
-        .sheet(item: $dataVM) { vm in UbuntuDataView(config: vm) }
+        .sheet(item: $pendingDelete, onDismiss: refresh) { vm in
+            DeleteSheet(vm: vm, size: state.storage.vms.first(where: { $0.folder == vm.folder })?.size, running: deleteBusy) { confirmed in
+                pendingDelete = nil
+                if confirmed { state.storage.trash(vm); refresh() }
+            }
+        }
+        .sheet(isPresented: $editorSettings) { UbuntuEditorSettingsView { editorLabel = UbuntuEditorSettings.label } }
         .sheet(isPresented: $adding) { AddUbuntuProjectView(vms: vms) { project in projects.remember(project); tab = 1; open(project, action: project.editor) } }
         .sheet(isPresented: $creating, onDismiss: refresh) {
             NewDeveloperEnvironmentView(root: Paths.vmsRoot) { vm in
                 refresh(); tab = 1
                 let project = UbuntuProject(name: URL(fileURLWithPath: DeveloperActions.projectPath(vm)).lastPathComponent, vmFolder: vm.folder.path, linuxPath: DeveloperActions.projectPath(vm))
-                projects.remember(project)
-                open(project, action: "code")
+                projects.remember(project); open(project, action: "code")
             }
         }
     }
-
-    private func vmCard(_ vm: VMConfig) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack { Text(vm.name).font(.headline); Spacer(); Text(statuses[vm.folder] ?? "Checking…").foregroundStyle(.secondary) }
-                Text("\(vm.cpus) CPUs · \(vm.memoryMB / 1024) GB RAM · \(DeveloperActions.name(vm) == nil ? "Desktop VM" : "Developer environment")").font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button("Start") { start(vm) }.disabled(statuses[vm.folder] != "Stopped")
-                    Button("Stop") { stop(vm) }.disabled(statuses[vm.folder] == "Stopped")
-                    Button("Terminal") { terminal(vm, path: "/home/\(vm.user)") }
-                    Button("Open Desktop") { desktop(vm) }
-                    Button("VS Code") { run(vm, path: "/home/\(vm.user)", action: "code") }
-                    Menu("More") {
-                        Button("Snapshots & Forks…") { snapshot = vm }
-                        Button("Files, Finder & Sync…") { dataVM = vm }
-                        Button("Ports & SSH…") { network = vm }
-                        Button("VM Settings…") {
-                            if state.vmRunning() && state.config.folder != vm.folder { problem = "Stop the current desktop before selecting another VM." }
-                            else { state.showOther(vm); state.showHome = false }
-                        }
-                    }.fixedSize()
-                }.disabled(job.busy)
-            }.padding(8)
-        }.padding(.bottom, 12).layoutProbe("home-vm-\(vm.id)")
+    private var shownProjects: [UbuntuProject] { previewProjects ?? projects.entries }
+    private var openLabel: String { editorLabel == "VS Code Insiders" ? "Open in Insiders" : "Open in VS Code" }
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { tab = 1 } label: { Label("Projects", systemImage: "folder").frame(maxWidth: .infinity, alignment: .leading).padding(8) }
+                .buttonStyle(.plain).background(tab == 1 ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 7))
+            Text("VIRTUAL MACHINES").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).padding(.top, 16)
+            ScrollView { VStack(alignment: .leading, spacing: 8) {
+            ForEach(vms, id: \.folder) { vm in
+                Button { select(vm, section: .overview) } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(vm.name).font(.callout).lineLimit(2)
+                        Text(statuses[vm.folder] ?? "Checking…").font(.caption).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(9)
+                }.buttonStyle(.plain)
+                    .background(tab == 0 && selectedVM?.folder == vm.folder ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 7))
+            }
+            } }
+            Spacer()
+            Button("Refresh VMs") { refresh() }.buttonStyle(.borderless)
+            Divider()
+            Text("Default editor").font(.caption).foregroundStyle(.secondary)
+            Button(editorLabel + " · Change…") { editorSettings = true }.buttonStyle(.borderless).multilineTextAlignment(.leading)
+        }.padding(12).frame(maxHeight: .infinity, alignment: .topLeading).background(Color(nsColor: .controlBackgroundColor)).disabled(busy)
     }
-
+    private func select(_ vm: VMConfig, section: VMSection) { selectedFolder = vm.folder; tab = 0; self.section = section }
+    private func vmHeader(_ vm: VMConfig) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text(vm.name).font(.title.bold()); Spacer(); Text(statuses[vm.folder] ?? "Checking…").foregroundStyle(.secondary) }
+            Text("\(vm.cpus) CPUs · \(vm.memoryMB / 1024) GB RAM · \(DeveloperActions.name(vm) == nil ? "Ubuntu desktop" : "Developer environment")").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button(openLabel) { run(vm, path: "/home/\(vm.user)", action: "code") }.buttonStyle(.borderedProminent)
+                Button("Terminal") { terminal(vm, path: "/home/\(vm.user)") }
+                Button("Show Desktop") { desktop(vm) }
+                Spacer()
+                Button(statuses[vm.folder] == "Stopped" ? "Start VM" : "Stop VM") {
+                    if statuses[vm.folder] == "Stopped" { start(vm) } else { stop(vm) }
+                }.disabled(statuses[vm.folder] == nil || stopping.contains(vm.folder))
+            }.disabled(busy)
+        }.layoutProbe("home-vm-\(vm.id)")
+    }
+    @ViewBuilder private func vmContent(_ vm: VMConfig) -> some View {
+        switch section {
+        case .network:
+            VStack(spacing: 0) {
+                if DeveloperActions.name(vm) == nil {
+                    UbuntuVMControls(config: vm, running: statuses[vm.folder] != "Stopped", pane: .network).padding(.horizontal, 20).padding(.top, 12)
+                }
+                UbuntuPortsView(state: state, config: vm, embedded: true)
+            }
+        case .files: UbuntuDataView(config: vm, embedded: true, onBusy: { detailBusy = $0 })
+        case .snapshots: UbuntuSnapshotsView(config: vm, embedded: true, onChanged: refresh, onBusy: { detailBusy = $0 })
+        case .resources, .input:
+            ScrollView {
+                UbuntuVMControls(config: vm, running: statuses[vm.folder] != "Stopped", pane: section == .input ? .input : .resources, helperBusy: state.vmRunning(), update: { features in
+                    guard !state.vmRunning() || state.config.folder == vm.folder else { problem = "Stop the other desktop before updating this VM's guest integration."; return }
+                    state.showOther(VMConfig.load(from: vm.folder) ?? vm); state.updateVM(features: features)
+                }, changed: refresh, storage: state.storage, openVM: { state.openExisting(); refresh() }, deleteVM: { vm in
+                    deleteBusy = statuses[vm.folder] != "Stopped"; pendingDelete = vm
+                }).padding(20)
+            }
+        case .overview, .projects:
+            ScrollView { VStack(alignment: .leading, spacing: 14) {
+                Text("Projects on this VM").font(.headline)
+                let entries = shownProjects.filter { $0.vmFolder == vm.folder.path }
+                if entries.isEmpty {
+                    Text("Add a Linux project to open its exact folder in your editor.").foregroundStyle(.secondary)
+                    Button("Add Project…") { adding = true }
+                    Button("Open Linux Home in Editor") { run(vm, path: "/home/\(vm.user)", action: "code") }
+                }
+                ForEach(entries) { project in projectCard(project) }
+                if section == .overview {
+                    HStack {
+                        GroupBox("Connections") {
+                            VStack(alignment: .leading, spacing: 8) { Text("SSH, LAN access and published ports"); Button("Manage Network & SSH →") { section = .network } }.frame(maxWidth: .infinity, alignment: .leading).padding(7)
+                        }
+                        GroupBox("Resources") {
+                            VStack(alignment: .leading, spacing: 8) { Text("\(vm.cpus) CPUs · \(vm.memoryMB / 1024) GB RAM"); Button("Configure Resources →") { section = .resources } }.frame(maxWidth: .infinity, alignment: .leading).padding(7)
+                        }
+                    }
+                }
+            }.padding(20) }
+        }
+    }
     private func projectCard(_ project: UbuntuProject) -> some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
-                HStack { Text(project.name).font(.headline); Spacer(); Text(vms.first { $0.folder.path == project.vmFolder }?.name ?? "VM unavailable").foregroundStyle(.secondary) }
+                HStack { Text(project.name).font(.headline); Spacer(); Text(vms.first(where: { $0.folder.path == project.vmFolder })?.name ?? "VM unavailable").foregroundStyle(.secondary) }
                 Text(project.linuxPath).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                if let date = project.lastOpened { Text("Last used \(date.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                 HStack {
-                    Button("Open Project") { open(project, action: project.editor) }.buttonStyle(.borderedProminent)
+                    Button(project.editor == "code" ? openLabel : "Open Project") { open(project, action: project.editor) }.buttonStyle(.borderedProminent)
                     Button("Terminal") { open(project, action: "terminal") }
-                    Button("VS Code") { open(project, action: "code") }
-                    if containerProjects.contains(project.vmFolder + project.linuxPath) {
-                        Button("Dev Container…") { open(project, action: "container") }
-                    }
-                    Menu("Files & Environment") {
-                        Button("VM Snapshots & Forks…") { snapshot = vms.first { $0.folder.path == project.vmFolder } }
-                        Button("Files, Finder & Sync…") { dataVM = vms.first { $0.folder.path == project.vmFolder } }
-                        Button("Check Project / Dev Container") { open(project, action: "info") }
-                        Button("Open Dev Container…") { open(project, action: "container") }
-                        Button("Import Mac Folder…") { importFolder(project) }
-                        Button("Export Project Archive…") { export(project) }
-                        Button("Verify Environment Lock") { verify(project) }
-                        Button("Ports & SSH…") { network = vms.first { $0.folder.path == project.vmFolder } }
-                        Button("Forget Project") { projects.entries.removeAll { $0.id == project.id } }
-                    }.fixedSize()
-                }.disabled(job.busy || !vms.contains { $0.folder.path == project.vmFolder })
-                Text("Forget removes this shortcut only. Your Linux files stay in the VM.").font(.caption).foregroundStyle(.secondary)
-            }.padding(8)
-        }.padding(.bottom, 12)
+                    if project.editor != "code" { Button(openLabel) { open(project, action: "code") } }
+                    if containerProjects.contains(project.vmFolder + project.linuxPath) { Button("Dev Container…") { open(project, action: "container") } }
+                    Button("VM Controls →") { if let vm = vms.first(where: { $0.folder.path == project.vmFolder }) { select(vm, section: .overview) } }
+                }
+                DisclosureGroup("Project files & tools") {
+                    HStack {
+                        Button("Check Project") { open(project, action: "info") }
+                        Button("Import…") { importFolder(project) }
+                        Button("Export…") { export(project) }
+                        Button("Verify Lock") { verify(project) }
+                        Button("Forget Shortcut") { projects.entries.removeAll { $0.id == project.id } }
+                    }.padding(.top, 7)
+                    Text("Forget removes this shortcut only; Linux files stay in the VM.").font(.caption).foregroundStyle(.secondary)
+                }.font(.caption)
+            }.padding(8).disabled(busy || !vms.contains { $0.folder.path == project.vmFolder })
+        }
     }
 
     private func refresh() {
@@ -152,6 +251,8 @@ struct UbuntuHomeView: View {
         }
         var seen: Set<String> = []
         vms = candidates.filter { seen.insert($0.folder.standardizedFileURL.resolvingSymlinksInPath().path).inserted }
+        if selectedFolder == nil { selectedFolder = vms.first(where: { $0.folder == state.config.folder })?.folder ?? vms.first?.folder }
+        if fixtures != nil { statuses = Dictionary(uniqueKeysWithValues: vms.map { ($0.folder, previewRunning ? "Desktop running" : "Stopped") }) }
     }
     private func run(_ vm: VMConfig, path: String, action: String, source: String? = nil) {
         if let why = Paths.startProblem(vm.folder) { problem = why; return }

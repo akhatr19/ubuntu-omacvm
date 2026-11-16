@@ -341,7 +341,7 @@ def qemu_plan(vm, port, desktop=False):
         args.extend(['-smbios', 'type=11,value=' + value])
     env = os.environ.copy()
     env.update(OMACVM_COCOA_HIDDEN='1', OMACVM_SLIRP_HOST_PORTS='', OMACVM_VIDEO_AV1='1', OMACVM_HW_CURSOR='1',
-               OMACVM_GPU_MEMORY_STATUS=str(vm / 'logs/gpu-memory'), OMACVM_PRODUCT_NAME='UbuntuVM')
+               OMACVM_GPU_MEMORY_STATUS=str(vm / 'logs/gpu-memory'), OMACVM_PRODUCT_NAME='UbuntuVM Desktop' if desktop else 'UbuntuVM')
     if desktop and not (os.environ.get('UVM_TEST_MODE') == '1' and os.environ.get('OMACVM_COCOA_HIDDEN') == '1'):
         env.pop('OMACVM_COCOA_HIDDEN', None)
     return args, env

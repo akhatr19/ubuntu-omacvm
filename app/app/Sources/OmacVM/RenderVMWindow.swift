@@ -315,6 +315,7 @@ enum RenderVMWindow {
             sheet("sheet-developer-create") { NewDeveloperEnvironmentView(root: tmp) }
             sheet("sheet-ubuntu-gesture-permissions") { UbuntuGesturesPermissions() }
             sheet("sheet-ubuntu-project") { AddUbuntuProjectView(vms: [config]) { _ in } }
+            sheet("sheet-ubuntu-editor") { UbuntuEditorSettingsView() }
             sheet("sheet-ubuntu-ports") { UbuntuPortsView(state: state, config: config) }
             sheet("sheet-ubuntu-data") { UbuntuDataView(config: config) }
             sheet("sheet-ubuntu-snapshots") {
@@ -330,6 +331,20 @@ enum RenderVMWindow {
             let project = UbuntuProject(name: "Example project", vmFolder: config.folder.path, linuxPath: "/home/ubuntu/Projects/example", lastOpened: Date())
             picture("screen-ubuntu-projects", into: dirURL) { UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project]) }
             sides("screen-ubuntu-projects", height: smallHeight)
+            picture("screen-workbench-wide", into: dirURL, width: 1000) {
+                UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project], previewSection: "Overview")
+            }
+            let previousRunning = state.vmRunning
+            state.vmRunning = { true }
+            picture("screen-workbench-running", into: dirURL, width: 1000) {
+                UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project], previewSection: "Overview", previewRunning: true)
+            }
+            state.vmRunning = previousRunning
+            for section in ["Resources", "Input", "Network & SSH", "Files"] {
+                picture("screen-workbench-" + section.replacingOccurrences(of: " & ", with: "-").lowercased(), into: dirURL) {
+                    UbuntuHomeView(state: state, fixtures: [config], previewProjects: [project], previewSection: section)
+                }
+            }
         }
         usbPictures(folder: folder, into: dir)
         sheet("sheet-8-icon-looks") { AppIconPicker(selected: IconTheme.all[0]) { _ in } }
@@ -492,13 +507,13 @@ enum RenderVMWindow {
 
     /// The window with this content, light and dark (the frames of the dark one stay in LayoutProbe).
     /// `each` looks at LayoutProbe's frames of each, light then dark.
-    static func picture<V: View>(_ name: String, into dir: URL, height: Double = smallHeight,
+    static func picture<V: View>(_ name: String, into dir: URL, height: Double = smallHeight, width: Double = Double(WindowSize.width),
                                  each: ((_ dark: Bool) -> Void)? = nil, _ root: () -> V) {
         for dark in [false, true] {
             LayoutProbe.frames = [:]
             let w = PictureWindow.make(root().environment(\.controlActiveState, .key))
             w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-            w.setContentSize(NSSize(width: WindowSize.width, height: height))
+            w.setContentSize(NSSize(width: width, height: height))
             settle(w)
             if let frame = w.contentView?.superview { WindowPicture.write(frame, "\(name)\(dark ? "-dark" : "")", into: dir) }
             each?(dark)

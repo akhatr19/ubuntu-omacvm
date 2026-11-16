@@ -7,6 +7,8 @@ struct UbuntuFeatureRow: View {
     let feature: String
     let title: String
     let detail: String
+    var onUpdate: (([String]) -> Void)? = nil
+    var helperBusy = false
     @State private var busy = false
     @State private var error: String?
     @State private var permissions = false
@@ -17,12 +19,12 @@ struct UbuntuFeatureRow: View {
         SettingRow(title: title, subtitle: error ?? detail, subtitleIsError: error != nil, probe: "ubuntu-\(feature)") {
             if busy { ProgressView().controlSize(.small) }
             Button(on ? "Disable" : feature == "gestures" ? "Install Helper and Enable…" : "Enable") { change() }
-                .disabled(busy || state.vmRunning())
+                .disabled(busy || state.vmRunning() || helperBusy)
         }
         if feature == "gestures" {
             SettingRow(title: "Gestures helper", subtitle: "Return to macOS: Control + Option + Escape (⌃⌥ Esc).", probe: "ubuntu-gesture-permissions") {
                 Button("Gestures & Permissions…") { permissions = true }
-                Button("Install/Update Helper…") { installGestures() }.disabled(busy || state.vmRunning())
+                Button("Install/Update Helper…") { installGestures() }.disabled(busy || state.vmRunning() || helperBusy)
             }
             .sheet(isPresented: $permissions) { UbuntuGesturesPermissions() }
         }
@@ -31,12 +33,15 @@ struct UbuntuFeatureRow: View {
     private func change() {
         let enable = !on
         guard feature == "gestures" && enable else {
-            state.updateVM(features: ["\(feature)=\(enable ? "on" : "off")"])
+            update(["\(feature)=\(enable ? "on" : "off")"])
             return
         }
         installGestures()
     }
 
+    private func update(_ features: [String]) {
+        if let onUpdate { onUpdate(features) } else { state.updateVM(features: features) }
+    }
     private func installGestures() {
         busy = true
         error = nil
@@ -54,7 +59,7 @@ struct UbuntuFeatureRow: View {
             }.value
             busy = false
             if let problem { error = problem }
-            else { permissions = true; state.updateVM(features: ["gestures=on"]) }
+            else { permissions = true; update(["gestures=on"]) }
         }
     }
 }
