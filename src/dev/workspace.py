@@ -23,6 +23,21 @@ def project_path(value):
     return value.rstrip('/')
 
 
+def native_host_key(vm):
+    file = vm / 'logs/ssh-identity.json'
+    if not file.exists(): return None
+    if file.is_symlink() or file.stat().st_size > 8192: raise ValueError('invalid desktop SSH identity')
+    value = json.loads(file.read_text())
+    pid = value.get('pid')
+    if value.get('schema') != 1 or type(pid) is not int or not 0 < pid <= 2147483647: return None
+    process = subprocess.run(['ps', '-p', str(pid), '-o', 'args='], capture_output=True, text=True)
+    disk = 'file=' + str(vm / 'disk.img').replace(',', ',,') + ','
+    if process.returncode or disk not in process.stdout: return None
+    key = value.get('key')
+    network.public_keys(key)
+    return key
+
+
 class Session:
     def __init__(self, vm, project, qga=None):
         self.vm = Path(vm).resolve()
@@ -31,8 +46,9 @@ class Session:
             raise ValueError('test mode refuses a personal VM')
         self.qga = Path(qga) if qga else None
         self.managed = (self.vm / 'uvm-env.json').is_file()
-        if (self.vm / 'guest-os').read_text().strip() != 'ubuntu':
-            raise ValueError('select an Ubuntu VM')
+        from guests import profile
+        self.guest = profile(self.vm)
+        if self.guest == 'custom': raise ValueError('enable a supported Linux integration before using developer connections')
         if self.managed:
             self.metadata = rt.config(self.vm)
         else:
@@ -60,9 +76,14 @@ class Session:
                 '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + known,
                 *(['-t'] if tty else []), self.metadata['user'] + '@127.0.0.1']
 
+    def root_ssh(self):
+        args = self.ssh()
+        args[-1] = 'root@127.0.0.1'
+        return args
+
     def ensure(self):
         active = rt.live(self.vm) if self.managed else rt.disk_busy(self.vm)
-        print('Connecting to Ubuntu…' if active else 'Starting Ubuntu and waiting for SSH…', flush=True)
+        print('Connecting to Linux…' if active else 'Starting Linux and waiting for SSH…', flush=True)
         if self.managed:
             rt.ensure_up(self.vm)
         else:
@@ -80,14 +101,15 @@ class Session:
                     time.sleep(1)
                     continue
                 try:
-                    result = rt.socket_request(self.qga, 'guest-exec', {'path': '/bin/cat',
-                        'arg': ['/etc/ssh/ssh_host_ed25519_key.pub'], 'capture-output': True}, qga=True)
-                    for _ in range(30):
-                        key = rt.socket_request(self.qga, 'guest-exec-status', {'pid': result['pid']}, qga=True)
-                        if key.get('exited'):
-                            break
-                        time.sleep(.1)
-                    public = base64.b64decode(key.get('out-data', ''), validate=True).decode().strip()
+                    public = native_host_key(self.vm)
+                    if public is None:
+                        result = rt.socket_request(self.qga, 'guest-exec', {'path': '/bin/cat',
+                            'arg': ['/etc/ssh/ssh_host_ed25519_key.pub'], 'capture-output': True}, qga=True)
+                        for _ in range(30):
+                            key = rt.socket_request(self.qga, 'guest-exec-status', {'pid': result['pid']}, qga=True)
+                            if key.get('exited'): break
+                            time.sleep(.1)
+                        public = base64.b64decode(key.get('out-data', ''), validate=True).decode().strip()
                     network.public_keys(public)
                     if not public.startswith('ssh-ed25519 '):
                         raise ValueError('Ubuntu did not provide its SSH host key')
@@ -107,7 +129,7 @@ class Session:
                 time.sleep(1)
             else:
                 raise TimeoutError('Ubuntu SSH did not become ready: ' + last)
-        print('Ubuntu is ready.', flush=True)
+        print('Linux is ready.', flush=True)
 
     def run(self, argv, capture=False):
         # SSH transports a quoted argv; no user input is interpreted as shell code.
@@ -141,9 +163,13 @@ print(json.dumps({'exists':p.is_dir(),'devcontainer':(p/'.devcontainer/devcontai
             return
         if self.managed:
             raise ValueError('Git is missing from this environment; provision its base profile before cloning')
-        print('Installing Git in Ubuntu (desktop VM only)…', flush=True)
+        print('Installing Git in Linux (desktop VM only)…', flush=True)
+        command = 'pacman -S --needed --noconfirm git' if self.guest == 'omarchy' else 'export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y --no-install-recommends git'
+        if native_host_key(self.vm) is not None:
+            rt.run(self.root_ssh() + [command], timeout=600)
+            return
         result = rt.socket_request(self.qga, 'guest-exec', {'path': '/bin/bash', 'arg': ['-c',
-            'set -e; export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y --no-install-recommends git'], 'capture-output': True}, qga=True)
+            'set -e; ' + command], 'capture-output': True}, qga=True)
         deadline = time.monotonic() + 600
         while time.monotonic() < deadline:
             status = rt.socket_request(self.qga, 'guest-exec-status', {'pid': result['pid']}, qga=True)

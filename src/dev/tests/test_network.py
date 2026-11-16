@@ -15,7 +15,7 @@ KEY = 'ssh-ed25519 ' + base64.b64encode(struct.pack('>I', 11) + b'ssh-ed25519' +
 
 class NetworkTests(unittest.TestCase):
     def test_guest_key_configuration_refuses_macos(self):
-        with mock.patch('network.sys.platform', 'darwin'), self.assertRaisesRegex(ValueError, 'Ubuntu guest'):
+        with mock.patch('network.sys.platform', 'darwin'), self.assertRaisesRegex(ValueError, 'Ubuntu or Arch Linux'):
             network.apply_keys('ubuntu', '')
 
     def test_defaults_do_not_publish_to_the_lan(self):

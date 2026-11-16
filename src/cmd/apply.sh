@@ -99,6 +99,10 @@ done
 macos=$(sw_vers -productVersion 2>/dev/null)
 (( ${macos%%.*} >= 15 )) || { echo "omacvm apply: OmacVM.app needs macOS 15 (Sequoia) or newer; this Mac runs $macos" >&2; exit 3; }
 export OMA_KEY=$KEY
+if [[ -n $VM && ( -z $TYPE || $TYPE == app ) ]] && md=$(app_dir "$VM" 2>/dev/null) && [[ -f $md/guest-os ]] && ! grep -qx 'omarchy' "$md/guest-os"; then
+  echo "omacvm apply: use this VM's integration settings in the app; Omarchy setup was not applied" >&2
+  exit 2
+fi
 [[ -f $KEY ]] || { log "SSH key for the VM: $KEY"; mkdir -p "$(dirname "$KEY")" && chmod 700 "$(dirname "$KEY")"; ssh-keygen -t ed25519 -N "" -C omacvm -f "$KEY" -q; }
 NOTCH=$(mac_tool mac-notch 2>/dev/null || echo none)
 

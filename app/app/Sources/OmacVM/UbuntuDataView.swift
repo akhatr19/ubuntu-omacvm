@@ -64,7 +64,7 @@ struct UbuntuDataView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     UbuntuHomeFoldersView(config: config, running: running) { sharedBusy = $0 }.disabled(personalBusy)
-                    DisclosureGroup("Advanced: disks, file services and sync") {
+                    if config.isUbuntu { DisclosureGroup("Advanced: disks, file services and sync") {
                     UbuntuSharedFoldersView(config: config, running: running) { personalBusy = $0 }.disabled(sharedBusy)
                     UbuntuPersonalDataView(config: config, running: running) { personalBusy = $0 }.disabled(sharedBusy)
                     Group {
@@ -120,6 +120,7 @@ struct UbuntuDataView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
                     }
                     }.disabled(busy)
+                    }
                     }
                 }.disabled(job.busy || mounting)
             }

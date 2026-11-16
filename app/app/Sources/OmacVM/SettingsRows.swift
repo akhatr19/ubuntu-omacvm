@@ -311,7 +311,7 @@ struct NativePointerRow: View {
     @State private var on = Settings.macPointer
 
     var body: some View {
-        SettingRow(title: "Native Mac pointer", subtitle: "Use Ubuntu's cursor image as the Mac pointer, without a second cursor behind it. From the next start.", probe: "native-pointer") {
+        SettingRow(title: "Native Mac pointer", subtitle: "Use the guest's cursor image as the Mac pointer, without a second cursor behind it. From the next start.", probe: "native-pointer") {
             RowSwitch(title: "Native Mac pointer", isOn: $on)
         }
         .onChange(of: on) { _, value in UserDefaults.standard.set(value, forKey: "macPointer") }

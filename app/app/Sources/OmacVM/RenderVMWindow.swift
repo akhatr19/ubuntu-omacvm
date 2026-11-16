@@ -304,6 +304,20 @@ enum RenderVMWindow {
         sheet("sheet-4-all-vms") { AllVMsView(storage: all, selected: all.vms.first?.folder) {} }
         if Product.isUbuntu {
             // Exercise the real data-library query against disposable metadata.
+            for guest in [GuestProfile.omarchy, .custom] {
+                if var variant = makeVM(tmp.appendingPathComponent("Profile-" + guest.rawValue), name: guest.title) {
+                    variant.guest = guest
+                    variant.features = VMConfig.defaultFeatures(for: guest)
+                    try? variant.write()
+                    let profileState = AppState(watchDrives: false)
+                    profileState.config = variant; profileState.screen = .setup; profileState.showHome = false
+                    picture("setup-profile-" + guest.rawValue, into: dirURL) { SetupView(state: profileState) }
+                    profileState.screen = .ready
+                    picture("screen-profile-" + guest.rawValue, into: dirURL) {
+                        UbuntuHomeView(state: profileState, fixtures: [variant], previewSection: guest == .omarchy ? "Input" : "Overview")
+                    }
+                }
+            }
             let id = String(repeating: "a", count: 32)
             let dataFolder = tmp.appendingPathComponent(".ubuntu-data/" + id)
             try? FileManager.default.createDirectory(at: dataFolder, withIntermediateDirectories: true)

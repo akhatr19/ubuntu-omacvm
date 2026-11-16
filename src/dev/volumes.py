@@ -336,6 +336,9 @@ def restore(vm, identity, snapshot_id):
 def main(args):
     from checkpoints import validate_vm
     vm = validate_vm(args.vm)
+    from guests import profile
+    if profile(vm) != 'ubuntu':
+        raise ValueError('Linux-backed data disks currently require an Ubuntu VM; use shared home folders for Omarchy')
     with locked(vm):
         if args.action == 'list': result = listing(vm)
         elif args.action == 'create': result = create(vm, args.name or '', args.size_gb)

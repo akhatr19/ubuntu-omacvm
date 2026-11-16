@@ -62,6 +62,9 @@ if [[ $(cat "$VM_DIR/guest-os" 2>/dev/null) == ubuntu ]]; then
   sed '/^FEATURES=/d' "$VM_DIR/vm.env" > "$VM_DIR/vm.env.new"
   mv "$VM_DIR/vm.env.new" "$VM_DIR/vm.env"
   cp "$OMACVM_SRC/VERSION" "$VM_DIR/omacvm-version"
+  # A manual ISO converted to the Ubuntu profile did not run create-ubuntu-vm.sh.
+  touch "$VM_DIR/venus-ready" "$VM_DIR/guest-pointer"
+  [[ -f $VM_DIR/video-decode ]] || printf 'av1\n' > "$VM_DIR/video-decode"
   exit
 fi
 

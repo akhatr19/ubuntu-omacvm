@@ -18,6 +18,11 @@ from workspace import Session
 def agent(session, command, data=None, timeout=600):
     import base64
     import time
+    from workspace import native_host_key
+    if not session.managed and native_host_key(session.vm) is not None:
+        session.ensure()
+        result = rt.run(session.root_ssh() + [command], input=data, capture_output=True, timeout=timeout)
+        return result.stdout.decode(errors='replace')
     path = rt.sockets(session.vm) / 'qga' if session.managed else session.qga
     request = {'path': '/bin/bash', 'arg': ['-c', command], 'capture-output': True}
     if data is not None: request['input-data'] = base64.b64encode(data).decode()
@@ -38,6 +43,10 @@ def agent(session, command, data=None, timeout=600):
 def upload(session, source, destination):
     """Keep guest-agent requests small; large guest-exec argv can stall serial IO."""
     import base64
+    from workspace import native_host_key
+    if not session.managed and native_host_key(session.vm) is not None:
+        agent(session, 'cat > ' + shlex.quote(destination), data=source)
+        return
     socket = rt.sockets(session.vm) / 'qga' if session.managed else session.qga
     handle = rt.socket_request(socket, 'guest-file-open', {'path': destination, 'mode': 'w'}, qga=True)
     try:

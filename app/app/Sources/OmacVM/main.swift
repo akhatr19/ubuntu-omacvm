@@ -32,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(1)
             }
         }
+        if let i = args.firstIndex(of: "--test-run-vm"), i + 1 < args.count, TestIdentity.isOn {
+            NativeVMTest.run(folder: URL(fileURLWithPath: args[i + 1]))
+        }
         // Test builds: pictures of the update UI (RenderUpdateUI.swift).
         if let i = args.firstIndex(of: "--render-update-ui"), i + 1 < args.count,
            TestHooks.allowed(bundleID: Bundle.main.bundleIdentifier) {
@@ -566,7 +569,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The fast network on, and its service not for this app (after an app
         // update): asked first, never a start that cannot work.
         guard case .decided(let userNetwork) = network else {
-            if FastNetwork.isOn(state.config) {
+            if !state.config.isCustom && FastNetwork.isOn(state.config) {
                 askFastNetwork(personAsked: personAsked) { [weak self] why in self?.startVM(openGLOnce: openGLOnce, network: .decided(why)) }
             } else {
                 startVM(openGLOnce: openGLOnce, network: .decided(nil))
@@ -760,6 +763,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// For qemu.log ("OmacVM: Mac helpers: ..."): what the look said and what was asked.
     private var helpersNote: String?
     private func askMacHelpers(personAsked: Bool, _ done: @escaping (Bool) -> Void) {
+        guard state.config.guest.integrated else { done(true); return }
         askingHelpers = true
         helpersNote = nil
         let c = state.config

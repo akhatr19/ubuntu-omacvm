@@ -32,7 +32,7 @@ struct ReadyView: View {
         }
     }
 
-    private var managed: Bool { Product.isUbuntu && DeveloperActions.name(state.config) != nil }
+    private var managed: Bool { state.config.isUbuntu && DeveloperActions.name(state.config) != nil }
     private var running: Bool { preview?.running ?? (managed ? managedRunning : state.vmRunning()) }
     /// A move to Omarchy 4.5 that is not over: Start and Update VM wait for Resume or Undo.
     private var moveOpen: Bool {
@@ -54,7 +54,7 @@ struct ReadyView: View {
         } notices: {
             UpdateBanner(updater: updater, running: running) { sheet = .whatsNew }
             // One blue banner at a time: the app's update first, the move's offer quiet meanwhile.
-            if !Product.isUbuntu {
+            if state.config.isOmarchy {
                 OmarchyMoveCard(state: state, running: running, preview: preview?.move, quiet: UpdateBanner.shows(updater))
             }
             notices
@@ -120,7 +120,7 @@ struct ReadyView: View {
             let behind = app.map { OmacVMVersion.vmIsBehind(state.config.guestVersion, app: $0) } ?? false
             // Also when this Mac's helpers are not set up for the VM (a VM
             // copied at the same version had no Update VM anywhere).
-            if !managed && (Product.isUbuntu || behind || macSetup?.wantsUpdateVM == true) {
+            if !managed && (state.config.isUbuntu || behind || macSetup?.wantsUpdateVM == true) {
                 Button {
                     state.updateVM()
                 } label: {
@@ -129,7 +129,7 @@ struct ReadyView: View {
                         Text("Update VM")
                     }
                 }
-                .help(Product.isUbuntu
+                .help(state.config.isUbuntu
                       ? "Start Ubuntu without a window, update its guest integrations from this app, and shut it down. Your files and Ubuntu settings stay."
                       : behind
                       ? "OmacVM in this VM is \(state.config.guestVersion.map { "\($0)" } ?? "from an older app"); this app has \(app ?? ""). Update VM starts the VM without a window, updates OmacVM in it and its helpers on the Mac (a few minutes) and shuts it down. Your files and settings in \(Product.guestName) stay."
@@ -185,7 +185,7 @@ struct ReadyView: View {
         if let s = macSetup, s.needsAction, state.config.filesProblem == nil {
             NoticeStrip(text: MacSetup.displayName(s.notice(vm: state.config.name)), info: MacSetup.displayName(s.info(vm: state.config.name)), action: s.button,
                         disabled: s.fix == .updateVM && (running || state.storage.moving != nil)) {
-                if Product.isUbuntu && s.fix == .settings && s.helpers.contains("OmacVM Gestures") {
+                if state.config.isUbuntu && s.fix == .settings && s.helpers.contains("OmacVM Gestures") {
                     gesturesPermissions = true
                 } else { state.fixMacSetup(s) }
             }
@@ -213,19 +213,19 @@ struct SettingsSections: View {
             Card {
                 ResourcesRow(state: state)
                 GraphicsRow(state: state)
-                if Product.isUbuntu {
+                if state.config.isUbuntu {
                     SettingRow(title: "WebGPU and OpenCL", subtitle: "Use the WebGPU browser for compute and the Video browser for hardware decoding. Requires Vulkan graphics.", probe: "ubuntu-compute")
                 } else {
                     GPUComputeRow(state: state)
                 }
                 GPUOffMainLoopRow(tick: state.tick)
                 VKWindowsNoCopyRow(tick: state.tick)
-                if !Product.isUbuntu { GhosttyGPURow(tick: state.tick, folder: state.config.folder, running: running) }
+                if state.config.isOmarchy { GhosttyGPURow(tick: state.tick, folder: state.config.folder, running: running) }
                 CloseActionRow(tick: state.tick)
             }
         }
         .spySection("general")
-        if Product.isUbuntu {
+        if state.config.guest.integrated {
             VStack(alignment: .leading, spacing: 0) {
                 SectionTitle(text: "Developer & SSH")
                 Card { DeveloperRow(state: state) }
@@ -235,18 +235,18 @@ struct SettingsSections: View {
             SectionTitle(text: "Display")
             Card {
                 StartInRow(state: state, previewNotch: preview?.notch, previewMenuBar: preview?.menuBar)
-                if !Product.isUbuntu && (preview?.notch ?? Mac.hasNotch) {
+                if state.config.isOmarchy && (preview?.notch ?? Mac.hasNotch) {
                     NotchSkipRow(state: state, previewInfo: preview?.notchSkipInfo ?? false)
                 }
                 KeepDockAwayRow(tick: state.tick)
-                if !Product.isUbuntu && (preview?.hdr ?? Mac.hasHDRDisplay) {
+                if state.config.isOmarchy && (preview?.hdr ?? Mac.hasHDRDisplay) {
                     HDRRow(tick: state.tick, folder: state.config.folder, running: running)
                 }
                 if preview?.extraBrightness ?? Mac.hasExtraBrightnessDisplay {
                     ExtraBrightnessRow(tick: state.tick)
                 }
-                if !Product.isUbuntu { PauseWhileHiddenRow(tick: state.tick) }
-                if Product.isUbuntu {
+                if state.config.isOmarchy { PauseWhileHiddenRow(tick: state.tick) }
+                if state.config.isUbuntu {
                     NativePointerRow(tick: state.tick)
                 } else {
                     PointerPlaneRow(tick: state.tick)
@@ -263,14 +263,14 @@ struct SettingsSections: View {
             SectionTitle(text: "Input")
             Card {
                 KeyboardRow(state: state, preview: preview?.keyNote)
-                if Product.isUbuntu {
+                if state.config.isUbuntu {
                     SettingRow(title: "Input methods", subtitle: "Configure languages and input sources in Ubuntu Settings → Keyboard.", probe: "ubuntu-input")
                     UbuntuFeatureRow(state: state, feature: "gestures", title: "Trackpad gestures",
                                      detail: "Three-finger swipes in full screen use GNOME workspaces and Overview. Installs the Mac gestures helper; macOS will ask for Accessibility and Input Monitoring.")
                 } else {
                     MacIMERow(state: state)
                 }
-                if !Product.isUbuntu {
+                if state.config.isOmarchy {
                     SwipeOutRow(tick: state.tick, gesturesOff: VMRecord.isOff("gestures", folder: state.config.folder))
                     MissionControlRow(state: state, gesturesOff: VMRecord.isOff("gestures", folder: state.config.folder))
                 }
@@ -290,7 +290,7 @@ struct SettingsSections: View {
             SectionTitle(text: "Sharing & Devices")
             Card {
                 MacFolderRow(state: state)
-                if Product.isUbuntu {
+                if state.config.isUbuntu {
                     UbuntuFeatureRow(state: state, feature: "drag-drop", title: "Finder drops",
                                      detail: "Drop files onto the VM window to copy them into Ubuntu's Downloads folder. Existing files are kept.")
                 } else { DragDropRow(state: state) }
@@ -305,8 +305,8 @@ struct SettingsSections: View {
                 DiskRow(state: state, preview: preview?.disk)
                 StorageRows(storage: state.storage, selected: state.config.location == nil ? nil : state.config.folder,
                             open: { state.openExisting() }, delete: delete)
-                if !Product.isUbuntu { MoveBackupRow(state: state, running: running, preview: preview?.moveBackup) }
-                if !Product.isUbuntu { CommandLineRow(preview: preview?.terminal) }
+                if state.config.isOmarchy { MoveBackupRow(state: state, running: running, preview: preview?.moveBackup) }
+                if state.config.isOmarchy { CommandLineRow(preview: preview?.terminal) }
                 if Product.isUbuntu {
                     SettingRow(title: "App updates", subtitle: "UbuntuVM updates are installed from this project's releases.", probe: "ubuntu-updates") {
                         Link("UbuntuVM source", destination: URL(string: "https://github.com/akhatr19/ubuntu-omacvm")!)

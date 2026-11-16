@@ -102,6 +102,7 @@ final class Runner {
             "-monitor", "none",
             "-qmp", "unix:\(q(c.qmpSocket.path)),server=on,wait=off",
         ]
+        if c.isCustom { return CustomISO.arguments(c, base: a) }
         // This runtime shows a Vulkan window Hyprland imports (virgl-set-type-without-egl.patch),
         // with MoltenVK and with KosmicKrisp: the guest then keeps Mesa's normal Vulkan present,
         // not the software copy (omacvm-vulkan-present); the Mac copies each frame into GL.
@@ -412,6 +413,9 @@ final class Runner {
 
     private func networkArguments() -> [String] {
         let c = config
+        if c.isCustom {
+            return ["-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0,romfile="]
+        }
         let choice = FastNetwork.choose(for: c, userNetwork: userNetwork)
         network = choice
         if choice.vmnet {
@@ -423,7 +427,7 @@ final class Runner {
                     "-device", "virtio-net-pci,id=nic0,netdev=fast,mac=\(choice.mac),romfile="]
         }
         // QEMU's user network: the Mac is 10.0.2.2 for the VM; SSH from the Mac on 127.0.0.1.
-        let published = Product.isUbuntu ? (try? UbuntuNetworking.read(c))?.ports.map(\.qemu) ?? [] : []
+        let published = (try? UbuntuNetworking.read(c))?.ports.map(\.qemu) ?? []
         return ["-netdev", (["user,id=net0", "hostfwd=tcp:127.0.0.1:\(c.sshPort)-:22"] + published).joined(separator: ","),
                 "-device", "virtio-net-pci,netdev=net0,mac=\(choice.mac),romfile="]
     }
@@ -431,10 +435,12 @@ final class Runner {
     func start() throws {
         let c = config
         var dataLock: Int32 = -1
-        if Product.isUbuntu {
+        if c.guest.integrated {
             _ = try UbuntuNetworking.read(c)
-            (dataLock, personalDataArguments) = try UbuntuPersonalData.start(c)
-            sharedFolderArguments = try UbuntuSharedFolders.arguments(c)
+            if c.isUbuntu {
+                (dataLock, personalDataArguments) = try UbuntuPersonalData.start(c)
+                sharedFolderArguments = try UbuntuSharedFolders.arguments(c)
+            }
             sharedFolderArguments += try UbuntuHomeFolders.arguments(c)
         }
         defer { if dataLock >= 0 { close(dataLock) } }
@@ -561,7 +567,7 @@ final class Runner {
         }
         // "Features…" in QEMU's app menu asks this app to open the control
         // centre in the VM (ControlCentreRoute).
-        let route = ControlCentreRoute(agentPath: c.agentSocket.path, vmName: c.name, takeKeys: { [weak self] window in
+        let route = ControlCentreRoute(agentPath: c.agentSocket.path, vmName: c.name, ubuntu: c.isUbuntu, takeKeys: { [weak self] window in
             AskKeys.take(window, overVM: self?.process?.processIdentifier)
         }) { [weak self] line in
             self?.appendLog(line)
@@ -773,20 +779,28 @@ final class Runner {
         // Not in a hidden test run (OMACVM_COCOA_HIDDEN) and not for the test
         // identity (its grants are given once, by hand; tests run unattended):
         // no prompt there.
-        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined,
+        if !c.isCustom, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined,
            ProcessInfo.processInfo.environment["OMACVM_COCOA_HIDDEN"] == nil, !TestIdentity.isOn {
             AVCaptureDevice.requestAccess(for: .audio) { _ in }
         }
         try p.run()
         qemuRuns = true
         process = p
-        if Product.isUbuntu {
+        if c.guest.integrated {
             UbuntuHomeFolders.status(c, pid: p.processIdentifier, message: "Waiting for the VM to connect shared home folders…")
-            do { try UbuntuSharedFolders.watch(c, pid: p.processIdentifier) }
-            catch { appendLog("Shared folders: " + error.localizedDescription) }
+            if c.isUbuntu {
+                do { try UbuntuSharedFolders.watch(c, pid: p.processIdentifier) }
+                catch { appendLog("Shared folders: " + error.localizedDescription) }
+            }
         }
         dropPeer?.set(p.processIdentifier)
         mark(pid: p.processIdentifier)
+        if c.isCustom {
+            startedAt = Date()
+            observeSleep()
+            Thread.detachNewThread { GuestAgent.hold(socketPath: c.agentSocket.path) }
+            return
+        }
         if usbOn {
             usb = USBRun(config: c, qemuPID: p.processIdentifier) { [weak self] line in self?.appendLog(line) }
         }
@@ -835,7 +849,7 @@ final class Runner {
         let agentDeadline = Date().addingTimeInterval(600)
         Thread.detachNewThread { [weak self] in
             GuestAgent.hold(socketPath: agentPath)
-            if Product.isUbuntu, let error = UbuntuForkIdentity.prepare(c, agent: agentPath, pid: pid) {
+            if c.guest.integrated, let error = UbuntuForkIdentity.prepare(c, agent: agentPath, pid: pid) {
                 Task { @MainActor in self?.appendLog("UbuntuVM: " + error) }
                 return
             }
@@ -844,11 +858,12 @@ final class Runner {
             if let line = SSHRepair.logLine(r, stillRunning: kill(pid, 0) == 0) {
                 Task { @MainActor in self?.appendLog(line) }
             }
-            if Product.isUbuntu, kill(pid, 0) == 0,
+            if c.guest.integrated, kill(pid, 0) == 0,
                let line = UbuntuHomeFolders.install(c, agent: agentPath, pid: pid, until: agentDeadline) {
                 Task { @MainActor in self?.appendLog(line) }
             }
-            if Product.isUbuntu, kill(pid, 0) == 0,
+            GuestSSHIdentity.remember(c, agent: agentPath, pid: pid)
+            if c.guest.integrated, kill(pid, 0) == 0,
                let line = UbuntuNetworking.apply(c, agent: agentPath, qmp: c.qmpSocket.path) {
                 try? String(line.prefix(2048)).write(to: c.folder.appendingPathComponent("developer-network-status"), atomically: true, encoding: .utf8)
                 Task { @MainActor in self?.appendLog(line) }

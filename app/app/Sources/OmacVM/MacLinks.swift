@@ -49,6 +49,9 @@ struct MacLinks: Equatable {
     }
 
     static func load(folder: URL) -> MacLinks {
+        if (try? String(contentsOf: folder.appendingPathComponent("guest-os"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == "custom" {
+            return MacLinks(features: "omanotch=off gestures=off bridge=off battery=off camera=off touch-id=off mac-ime=off drag-drop=off")
+        }
         guard let text = try? String(contentsOf: folder.appendingPathComponent("features"), encoding: .utf8) else {
             return MacLinks()
         }
@@ -92,6 +95,7 @@ enum TestIdentity {
     static func isTest(_ id: String?) -> Bool {
         guard let id else { return false }
         return id == "org.omacvm.app.test" || id.hasPrefix("org.omacvm.app.test.")
+            || id == "org.omacvm.ubuntu.test" || id.hasPrefix("org.omacvm.ubuntu.test.")
     }
     /// The Bridge's folder (token, relay key, relay socket).
     static let bridgeFolder = isOn ? "omacvm-test-bridge" : "omacvm-bridge"

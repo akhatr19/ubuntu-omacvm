@@ -1,8 +1,9 @@
 # UbuntuVM
 
-Ubuntu Desktop ARM64 on Apple Silicon, using OmacVM’s accelerated runtime and memory reclamation. Includes native Mac cursor rendering, GNOME clipboard/display integration, folder sharing, media controls, battery and camera support.
+Ubuntu, Omarchy and custom ARM64 VMs on Apple Silicon, with a shared Workbench and per-VM integration profiles. Includes OmacVM’s accelerated runtime, memory reclamation and full Omarchy integration suite alongside the Ubuntu GNOME integrations.
 
 See [the Ubuntu setup guide](docs/ubuntu.md) for the app build, ISO installer, graphics modes and remaining limitations.
+See [guest profiles](docs/guest-profiles.md) for Omarchy, custom ISO installation, defaults and upstream updates.
 
 For a terminal-first workflow, use [`uvm` developer environments](docs/developer-environments.md): pinned base images and package locks, Linux projects, VS Code Remote SSH, Docker, localhost forwarding, and an optional desktop.
 

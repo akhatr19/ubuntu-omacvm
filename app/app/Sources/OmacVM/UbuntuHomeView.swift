@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import OmacVMFeatures
 
 struct UbuntuHomeView: View {
     @ObservedObject var state: AppState
@@ -39,9 +40,12 @@ struct UbuntuHomeView: View {
                 Button("App Settings…") { editorSettings = true }.disabled(busy)
                 Button("Add Project…") { tab = 1; adding = true }.disabled(vms.isEmpty || busy)
                 Menu("New VM") {
-                    Button("Ubuntu Desktop from ISO…") {
-                        guard !state.vmRunning() else { problem = "Stop the current desktop before installing another."; return }
-                        state.config = VMConfig(); state.screen = .setup; state.showHome = false
+                    ForEach(GuestProfile.allCases) { guest in
+                        Button("\(guest.title)…") {
+                            guard !state.vmRunning() else { problem = "Stop the current desktop before installing another."; return }
+                            var config = VMConfig(); config.guest = guest; config.name = guest.title
+                            state.config = config; state.screen = .setup; state.showHome = false
+                        }
                     }
                     Button("Reproducible Environment…") { creating = true }
                     Button("Open Existing VM…") { state.openExisting(); refresh() }
@@ -75,7 +79,7 @@ struct UbuntuHomeView: View {
                         Divider().padding(.top, 8)
                         vmContent(vm).id(vm.folder)
                     } else {
-                        ContentUnavailableView("No Ubuntu VMs", systemImage: "desktopcomputer", description: Text("Choose New VM to install Ubuntu or create a developer environment."))
+                        ContentUnavailableView("No VMs", systemImage: "desktopcomputer", description: Text("Choose Ubuntu, Omarchy, a custom ISO or a developer environment from New VM."))
                     }
                     if job.busy { ProgressView("Preparing Ubuntu…").padding(12) }
                     if !job.output.isEmpty {
@@ -164,10 +168,13 @@ struct UbuntuHomeView: View {
     private func vmHeader(_ vm: VMConfig) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Text(vm.name).font(.title.bold()); Spacer(); Text(statuses[vm.folder] ?? "Checking…").foregroundStyle(.secondary) }
-            Text("\(vm.cpus) CPUs · \(vm.memoryMB / 1024) GB RAM · \(DeveloperActions.name(vm) == nil ? "Ubuntu desktop" : "Developer environment")").font(.caption).foregroundStyle(.secondary)
+            Text("\(vm.cpus) CPUs · \(vm.memoryMB / 1024) GB RAM · \(vm.guest.title)\(DeveloperActions.name(vm) == nil ? "" : " developer environment")").font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button(openLabel) { run(vm, path: "/home/\(vm.user)", action: "code") }.buttonStyle(.borderedProminent)
-                Button("Terminal") { terminal(vm, path: "/home/\(vm.user)") }
+                if vm.guest.integrated {
+                    Button(openLabel) { run(vm, path: "/home/\(vm.user)", action: "code") }.buttonStyle(.borderedProminent)
+                    Button("Terminal") { terminal(vm, path: "/home/\(vm.user)") }
+                    Button("All VM Settings…") { state.showOther(vm); state.showHome = false }
+                }
                 Button("Show Desktop") { desktop(vm) }
                 Spacer()
                 Button(statuses[vm.folder] == "Stopped" ? "Start VM" : "Stop VM") {
@@ -177,6 +184,9 @@ struct UbuntuHomeView: View {
         }.layoutProbe("home-vm-\(vm.id)")
     }
     @ViewBuilder private func vmContent(_ vm: VMConfig) -> some View {
+        if vm.isCustom && section != .snapshots && section != .resources {
+            CustomGuestView(state: state, config: vm, running: statuses[vm.folder] != "Stopped")
+        } else {
         switch section {
         case .network:
             VStack(spacing: 0) {
@@ -219,6 +229,7 @@ struct UbuntuHomeView: View {
                     }
                 }
             }.padding(20) }
+        }
         }
     }
     private func projectCard(_ project: UbuntuProject) -> some View {

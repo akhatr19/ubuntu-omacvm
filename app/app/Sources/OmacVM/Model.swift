@@ -170,6 +170,7 @@ enum Product {
 
 /// One VM: a folder with vm.env, disk.img, efi-vars.fd and logs/.
 struct VMConfig: Equatable {
+    var guest: GuestProfile = Product.isUbuntu ? .ubuntu : .omarchy
     var name = Product.guestName
     var cpus = 4
     var memoryMB = 8192
@@ -185,6 +186,15 @@ struct VMConfig: Equatable {
     // for a vm.env without FEATURES: no screens asked here (VMConfig is
     // also made off the main thread), so Omanotch only with a notch then.
     var features = NewVMFeatures.string(hasBattery: Mac.hasBattery, hasNotch: false)
+
+    var isUbuntu: Bool { guest == .ubuntu }
+    var isOmarchy: Bool { guest == .omarchy }
+    var isCustom: Bool { guest == .custom }
+
+    static func defaultFeatures(for guest: GuestProfile) -> String {
+        let catalog = (try? String(contentsOf: Paths.resources.appendingPathComponent("omacvm/src/features.tsv"), encoding: .utf8)) ?? ""
+        return guest.defaults(catalog: catalog, hasBattery: Mac.hasBattery, hasNotch: Mac.hasNotch)
+    }
 
     /// The folder of a VM that exists (it may be in an older VMs folder);
     /// nil for a new one, which goes into the VMs folder under its name.
@@ -276,6 +286,7 @@ struct VMConfig: Equatable {
 
         """
         try text.write(to: folder.appendingPathComponent("vm.env"), atomically: true, encoding: .utf8)
+        try (guest.rawValue + "\n").write(to: folder.appendingPathComponent("guest-os"), atomically: true, encoding: .utf8)
     }
 
     /// Only CPUS and MEM_MB in vm.env, every other line as it was (`omacvm
@@ -312,6 +323,8 @@ struct VMConfig: Equatable {
         }
         var c = VMConfig()
         c.location = folder.standardizedFileURL
+        let os = (try? String(contentsOf: folder.appendingPathComponent("guest-os"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        c.guest = os.flatMap(GuestProfile.init(rawValue:)) ?? (FileManager.default.fileExists(atPath: folder.appendingPathComponent("guest-os").path) ? .custom : .omarchy)
         c.name = values["NAME"] ?? folder.lastPathComponent
         c.cpus = Int(values["CPUS"] ?? "") ?? c.cpus
         c.memoryMB = Int(values["MEM_MB"] ?? "") ?? c.memoryMB
@@ -319,7 +332,7 @@ struct VMConfig: Equatable {
         c.sshPort = Int(values["SSH_PORT"] ?? "") ?? c.sshPort
         c.user = values["VM_USER"] ?? ""
         c.fullName = values["VM_FULLNAME"] ?? ""
-        c.hostname = values["VM_HOSTNAME"] ?? c.hostname
+        c.hostname = values["VM_HOSTNAME"] ?? c.guest.rawValue
         c.timeZone = values["VM_TZ"] ?? c.timeZone
         c.language = values["VM_LANG"] ?? c.language
         c.keyboard = values["KEYBOARD"] ?? c.keyboard

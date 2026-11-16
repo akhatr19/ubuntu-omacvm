@@ -50,6 +50,14 @@ else APP_ID=${OMACVM_APP_ID:-org.omacvm.app}; fi
 # uses) the installed OmacVM.app or a copy with its id.
 APP_BUNDLE_ID=org.omacvm.app
 [[ ${OMACVM_TEST_IDENTITY:-} == 1 ]] && APP_BUNDLE_ID=org.omacvm.app.test
+APP_VMS_DEFAULT=OmacVM
+# A bundled fork uses its own settings and VMs, even while applying Omarchy.
+if [[ ${OMACVM_TEST_IDENTITY:-} != 1 && ${OMACVM_APP_RUNTIME:-} == */Contents/Resources/runtime ]]; then
+  app_identity=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${OMACVM_APP_RUNTIME%/Resources/runtime}/Info.plist" 2>/dev/null || true)
+  if [[ $app_identity == org.omacvm.ubuntu* ]]; then
+    APP_ID=${OMACVM_APP_ID:-org.omacvm.ubuntu}; APP_BUNDLE_ID=org.omacvm.ubuntu; APP_VMS_DEFAULT=UbuntuVMs
+  fi
+fi
 
 # Where new VMs go, as the app decides (app/app/Sources/OmacVM/VMsFolder.swift;
 # src/tests/app-paths.sh checks that both agree): the folder set in the app,
@@ -61,7 +69,13 @@ APP_BUNDLE_ID=org.omacvm.app
 APP_VMS_OLD="Library/Application Support/OmacVM/VMs"
 APP_TEST_VMS="OmacVM Test VMs"
 app_vms_root() {
-  local r new=$HOME/OmacVM
+  local r new=$HOME/$APP_VMS_DEFAULT
+  if [[ -n ${OMACVM_VMS_ROOT:-} ]]; then
+    if [[ ${OMACVM_TEST_IDENTITY:-} == 1 ]] && app_prod_dir "$OMACVM_VMS_ROOT"; then
+      echo "$HOME/$APP_TEST_VMS"; return
+    fi
+    echo "${OMACVM_VMS_ROOT%/}"; return
+  fi
   r=$(defaults read "$APP_ID" vmsRoot 2>/dev/null)
   if [[ ${OMACVM_TEST_IDENTITY:-} == 1 ]]; then
     [[ -n $r ]] && ! app_prod_dir "${r%/}" && { echo "${r%/}"; return; }
@@ -477,7 +491,13 @@ app_tier() {   # APP -> 1 the installed name, 2 another name, 3 a test/bench/RC/
   esac
 }
 
-app_version() { defaults read "$1/Contents/Info" CFBundleShortVersionString 2>/dev/null; }
+app_version() {
+  local id
+  id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1/Contents/Info.plist" 2>/dev/null || true)
+  if [[ $id == org.omacvm.ubuntu* && -s $1/Contents/Resources/omacvm/src/VERSION ]]; then
+    head -n1 "$1/Contents/Resources/omacvm/src/VERSION"
+  else defaults read "$1/Contents/Info" CFBundleShortVersionString 2>/dev/null; fi
+}
 
 app_free_port() {   # the VM's SSH port: free now, and in no other VM's vm.env
   local d p used=" "
@@ -535,6 +555,8 @@ app_version_lt() {   # A B: A is older than B (2.10.0 is newer than 2.9.1)
 }
 
 app_published() {   # VERSION: its signed update feed is there (small; the zip is not fetched)
+  # Guest integrations update from this package; upstream apps cannot replace the fork.
+  [[ $APP_BUNDLE_ID == org.omacvm.ubuntu ]] && return 1
   curl -fsSL --max-time 30 -o /dev/null "$APP_DOWNLOADS/v$1/OmacVM-appcast.json.sig" 2>/dev/null
 }
 

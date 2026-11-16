@@ -33,7 +33,12 @@ struct UbuntuVMControls: View {
                 Text(pane == .input ? "Desktop input preferences apply app-wide; gesture enablement belongs to this VM." : "CPU, memory, graphics and disk belong to this VM. Other desktop preferences apply app-wide.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if pane == .network {
+            if config.isCustom {
+                Card { ResourcesRow(state: model) }
+                Text("Basic virtio display and audio output. Advanced graphics, guest disk resizing and desktop integration are unavailable until a supported Linux profile is enabled.")
+                    .foregroundStyle(.secondary)
+                if let storage { Card { StorageRows(storage: storage, selected: config.folder, open: openVM, delete: deleteVM) } }
+            } else if pane == .network {
                 Card { FastNetworkRow(state: model) }
             } else if pane == .input {
                 Text("Return to macOS: Control + Option + Escape (⌃⌥ Esc)").font(.headline)
@@ -43,14 +48,20 @@ struct UbuntuVMControls: View {
                     EscapeRow(tick: model.tick)
                     ShareKeyboardRow(tick: model.tick)
                     if mouse.connected { MagicMouseRow(tick: model.tick, gesturesOff: VMRecord.isOff("gestures", folder: config.folder)) }
-                    UbuntuFeatureRow(state: model, feature: "gestures", title: "Trackpad gestures", detail: "Configure fullscreen or focused-window capture and check the installed helper.", onUpdate: update, helperBusy: helperBusy)
-                    UbuntuFeatureRow(state: model, feature: "drag-drop", title: "Finder drops", detail: "Copy dropped files into Ubuntu Downloads without overwriting existing files.", onUpdate: update, helperBusy: helperBusy)
+                    if config.isUbuntu {
+                        UbuntuFeatureRow(state: model, feature: "gestures", title: "Trackpad gestures", detail: "Configure fullscreen or focused-window capture and check the installed helper.", onUpdate: update, helperBusy: helperBusy)
+                        UbuntuFeatureRow(state: model, feature: "drag-drop", title: "Finder drops", detail: "Copy dropped files into Downloads without overwriting existing files.", onUpdate: update, helperBusy: helperBusy)
+                    } else if config.isOmarchy {
+                        MacIMERow(state: model)
+                        SwipeOutRow(tick: model.tick, gesturesOff: VMRecord.isOff("gestures", folder: config.folder))
+                        MissionControlRow(state: model, gesturesOff: VMRecord.isOff("gestures", folder: config.folder))
+                    }
                 }
             } else {
                 Text("CPU, memory & graphics").font(.headline)
                 Card {
                     ResourcesRow(state: model)
-                    GraphicsRow(state: model)
+                    if !config.isCustom { GraphicsRow(state: model) }
                     GPUOffMainLoopRow(tick: model.tick)
                     VKWindowsNoCopyRow(tick: model.tick)
                 }

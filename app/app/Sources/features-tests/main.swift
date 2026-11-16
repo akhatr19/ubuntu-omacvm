@@ -358,5 +358,13 @@ expect(!MissionControl.subtitle.lowercased().contains("xperimental") && MissionC
        ![MissionControl.needs45, MissionControl.needsGestures, MissionControl.onNote].contains(MissionControl.subtitle),
        "mission-control row text beside the picture: short, not experimental, none of the notes")
 
+let catalog = "bridge\ton\nomanotch\tnotch\nbattery\tlaptop\ncamera\ton\nmac-ime\toff\nmission-control\toff\ngpu-compute\ton\ndrag-drop\toff"
+let omarchyProfile = parse(GuestProfile.omarchy.defaults(catalog: catalog, hasBattery: true, hasNotch: true))
+let ubuntuProfile = parse(GuestProfile.ubuntu.defaults(catalog: catalog, hasBattery: false, hasNotch: true))
+let customProfile = parse(GuestProfile.custom.defaults(catalog: catalog, hasBattery: true, hasNotch: true))
+expect(omarchyProfile["bridge"] == "on" && omarchyProfile["omanotch"] == "on" && omarchyProfile["battery"] == "on", "Omarchy defaults follow the upstream catalog and host hardware")
+expect(omarchyProfile["mac-ime"] == "off" && omarchyProfile["mission-control"] == "off", "optional Omarchy integrations remain available but off by default")
+expect(ubuntuProfile["bridge"] == "off" && ubuntuProfile["omanotch"] == "off" && ubuntuProfile["drag-drop"] == "on" && ubuntuProfile["battery"] == "off", "Ubuntu selects its supported integrations independently")
+expect(customProfile.values.allSatisfy { $0 == "off" }, "custom ISOs receive no Mac integrations")
 print(failures == 0 ? "all passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)

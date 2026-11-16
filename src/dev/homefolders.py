@@ -41,8 +41,9 @@ def root():
 
 
 def enabled(vm):
+    from guests import profile
     # Existing raw personal disks already mount home folders; don't cover them.
-    return not any((vm / file).exists() for file in (OFF, 'file-service', 'data-volume.json'))
+    return profile(vm) != 'custom' and not any((vm / file).exists() for file in (OFF, 'file-service', 'data-volume.json'))
 
 
 def listing(vm):

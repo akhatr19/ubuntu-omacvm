@@ -15,6 +15,7 @@ from bundles import copy_disk
 from manifest import write_json
 import network
 import runtime as rt
+from guests import profile
 from supervisor import free_port
 
 RECORD = 'checkpoint-head.json'
@@ -31,8 +32,8 @@ def validate_vm(vm):
     vm = Path(vm).resolve()
     if '.ubuntu-checkpoints' in vm.parts:
         raise ValueError('checkpoint storage is immutable; fork it into a VM first')
-    if (vm / 'guest-os').read_text().strip() != 'ubuntu' or not (vm / 'disk.img').is_file() or (vm / 'disk.img').is_symlink():
-        raise ValueError('select an Ubuntu VM')
+    if not (vm / 'vm.env').is_file() or not (vm / 'disk.img').is_file() or (vm / 'disk.img').is_symlink():
+        raise ValueError('select a VM created by this app')
     if os.environ.get('UVM_TEST_MODE') == '1' and not vm.name.startswith('OmacVM Test-'):
         raise ValueError('test mode refuses a personal VM')
     return vm
@@ -122,9 +123,10 @@ def create_locked(vm, label):
     temporary = Path(tempfile.mkdtemp(prefix='.creating-', dir=root))
     try:
         copy_tree(vm, temporary / 'vm')
+        metadata = read_json(vm / 'uvm-env.json') if (vm / 'uvm-env.json').exists() else {}
         record = {'schema': 1, 'id': identity, 'parent': parent['parent'], 'lineage': parent['lineage'],
                   'label': label, 'vm_name': vm.name, 'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                  'branch': parent['branch'], 'kind': 'stopped-disk', 'runtime_sha256': rt.runtime_identity(),
+                  'branch': parent['branch'], 'kind': 'stopped-disk', 'runtime_sha256': metadata.get('runtime_sha256') or rt.runtime_identity(),
                   'external_mac_data': 'excluded', 'personal_data': 'excluded', 'ram': 'not included'}
         write_json(temporary / 'checkpoint.json', record)
         for path in temporary.rglob('*'):
@@ -162,7 +164,7 @@ def restore(vm, identity):
     if record['lineage'] != current['lineage']:
         raise ValueError('checkpoint belongs to another VM lineage')
     if record['runtime_sha256'] != rt.runtime_identity():
-        raise ValueError('checkpoint requires its original QEMU runtime')
+        rt.runtime_resources(record['runtime_sha256'])
     with stopped(vm):
         local_env = (vm / 'vm.env').read_text()
         local_metadata = read_json(vm / 'uvm-env.json') if (vm / 'uvm-env.json').exists() else None
@@ -206,10 +208,11 @@ def fork(vm, identity, name):
     if not re.fullmatch(r'[a-z][a-z0-9-]{0,39}', name):
         raise ValueError('branch name must start with a lowercase letter and use letters, digits and dashes')
     folder, record = checkpoint(vm, identity)
-    if record['lineage'] != head(vm)['lineage'] or record['runtime_sha256'] != rt.runtime_identity():
+    if record['lineage'] != head(vm)['lineage']:
         raise ValueError('checkpoint lineage or runtime does not match')
+    if record['runtime_sha256'] != rt.runtime_identity(): rt.runtime_resources(record['runtime_sha256'])
     managed = (folder / 'vm/uvm-env.json').exists()
-    prefix = 'OmacVM Test-' if os.environ.get('UVM_TEST_MODE') == '1' else 'Ubuntu-'
+    prefix = 'OmacVM Test-' if os.environ.get('UVM_TEST_MODE') == '1' else {'ubuntu':'Ubuntu-', 'omarchy':'Omarchy-', 'custom':'VM-'}[profile(vm)]
     target = vm.parent / ((('OmacVM Test-Dev-' if os.environ.get('UVM_TEST_MODE') == '1' else 'Dev-') + name) if managed else (prefix + name))
     if target.exists(): raise ValueError('a VM with that branch name already exists')
     temporary = Path(tempfile.mkdtemp(prefix='.forking-', dir=vm.parent))
@@ -234,7 +237,7 @@ def fork(vm, identity, name):
             data = read_json(child / 'uvm-env.json')
             data.update(name=name, vm_name=target.name, ssh_port=port)
             write_json(child / 'uvm-env.json', data)
-        else:
+        elif profile(child) != 'custom':
             (child / 'fork-identity').write_text(uuid.uuid4().hex + '\n')
         write_json(child / RECORD, {'schema': 1, 'lineage': record['lineage'], 'branch': uuid.uuid4().hex, 'parent': identity})
         rt.private_dir(child / 'logs')

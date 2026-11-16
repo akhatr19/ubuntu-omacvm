@@ -10,11 +10,15 @@ The source-tree command needs the existing runtime and firmware under
 `app/runtime/.build`, produced by `app/scripts/build-app.sh`. For development,
 the corresponding runtime and firmware from the verified upstream release can
 also be used; an ordinary Homebrew QEMU does not have the required patches.
-Build the Ubuntu launcher around the official OmacVM 3.4.1 release app:
+Build the launcher around the official OmacVM 3.4.6 release app. It also offers
+[Omarchy and custom ISO profiles](guest-profiles.md).
 
 ```bash
 app/scripts/build-ubuntu-app.sh /path/to/OmacVM.app "/path/to/UbuntuVM Installer.app"
 ```
+
+Pass an approved previous packaged app as a third argument to retain runtimes
+pinned by existing frozen bases and developer environments.
 
 The output path must be new. The script checks that the runtime's source
 commit matches and that this fork has not changed its runtime patches,

@@ -23,7 +23,7 @@ ssh-keygen -A
 systemd-id128 new > /etc/machine-id
 rm -f /var/lib/dbus/machine-id
 ln -s /etc/machine-id /var/lib/dbus/machine-id
-hostnamectl set-hostname "ubuntu-${TOKEN:0:12}"
+hostnamectl set-hostname "linux-${TOKEN:0:12}"
 if [[ -f /etc/omacvm/env ]]; then sed -i "s|^OMACVM_VM_NAME_B64=.*|OMACVM_VM_NAME_B64=$NAME_B64|" /etc/omacvm/env; fi
 printf '%s %s\n' "$TOKEN" "$BOOT" > "$STAMP"
 sync

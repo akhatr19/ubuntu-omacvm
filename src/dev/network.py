@@ -68,8 +68,10 @@ def load(vm, defaults=None):
 def apply_keys(user, encoded):
     """Runs only inside Ubuntu through its private guest-agent connection."""
     import os
-    if sys.platform != 'linux' or 'ID=ubuntu' not in Path('/etc/os-release').read_text().splitlines():
-        raise ValueError('SSH key configuration runs only inside an Ubuntu guest')
+    lines = Path('/etc/os-release').read_text().splitlines() if sys.platform == 'linux' else []
+    ubuntu = 'ID=ubuntu' in lines
+    if not ubuntu and not any(line in ('ID=arch', 'ID=archarm', 'ID="arch"', 'ID="archarm"') for line in lines):
+        raise ValueError('SSH key configuration requires Ubuntu or Arch Linux')
     if os.geteuid() != 0 or not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', user) or user == 'root':
         raise ValueError('a non-root Ubuntu account is required')
     keys = public_keys(base64.b64decode(encoded, validate=True).decode())
@@ -84,7 +86,7 @@ def apply_keys(user, encoded):
         'AuthorizedKeysFile .ssh/authorized_keys /etc/ssh/ubuntu-vm/%u\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n')
     Path('/run/sshd').mkdir(mode=0o755, exist_ok=True)
     subprocess.run(['/usr/sbin/sshd', '-t'], check=True)
-    subprocess.run(['systemctl', 'try-reload-or-restart', 'ssh'], check=True)
+    subprocess.run(['systemctl', 'try-reload-or-restart', 'ssh' if ubuntu else 'sshd'], check=True)
 
 
 if __name__ == '__main__':

@@ -379,6 +379,9 @@ def stop(vm, identity):
 def main(args):
     from checkpoints import validate_vm
     vm = validate_vm(args.vm)
+    from guests import profile
+    if profile(vm) != 'ubuntu':
+        raise ValueError('Linux-backed file sharing currently requires an Ubuntu VM; use shared home folders for Omarchy')
     if args.action == 'list': result = listing(vm)
     elif args.action == 'create': result = create(vm, args.id, args.name or '', args.size_gb, sys.stdin.buffer.read(1025).decode().rstrip('\n'))
     elif args.action == 'use': attach(vm, args.id or '', args.qga); result = {'ready': True}

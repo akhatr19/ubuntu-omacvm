@@ -138,7 +138,18 @@ final class Creator: ObservableObject {
             failed = "Could not write the VM settings: \(error.localizedDescription)"
             return
         }
-        if Product.isUbuntu {
+        if config.isCustom {
+            guard let ubuntuISO else { failed = "Choose an ARM64 UEFI ISO first."; return }
+            title = "Preparing installation media"
+            Task {
+                let problem = await Task.detached { () -> String? in
+                    do { try CustomISO.prepare(folder: config.folder, iso: ubuntuISO, diskGB: config.diskGB); return nil }
+                    catch { return error.localizedDescription }
+                }.value
+                if let problem { failed = problem; onEnded?(false) }
+                else { finished = true; onEnded?(true) }
+            }
+        } else if config.isUbuntu {
             guard let ubuntuISO else { failed = "Choose the Ubuntu Desktop ARM64 ISO first."; return }
             try? "ubuntu\n".write(to: config.folder.appendingPathComponent("guest-os"), atomically: true, encoding: .utf8)
             launch(script: "create-ubuntu-vm.sh", folder: config.folder, log: "create.log",
@@ -211,6 +222,8 @@ final class Creator: ObservableObject {
         // in a terminal, where they would be noise. Downloads go to the drive
         // of the VMs folder (PrebuiltImage.environment).
         var env = PrebuiltImage.environment()
+        env["OMACVM_VMS_ROOT"] = folder.deletingLastPathComponent().path
+        if Product.isUbuntu { env["OMACVM_APP_ID"] = Installer.appBundleID }
         env["OMACVM_PROGRESS"] = "1"
         env.merge(extra) { _, new in new }
         p.environment = env
