@@ -16,6 +16,13 @@ expect("missing report rejected", UbuntuGesturesStatus.parse(old + "omacvm-gestu
 expect("missing startup rejected", UbuntuGesturesStatus.parse("omacvm-gestures: permissions: Accessibility granted, Input Monitoring granted", pid: 20) == nil)
 let changed = current + "omacvm-gestures: permissions: Accessibility granted, Input Monitoring granted\n"
 expect("latest report wins", UbuntuGesturesStatus.parse(changed, pid: 20) == "Accessibility: Allowed\nInput Monitoring: Allowed")
+let report = #"{"schema":1,"pid":20,"updated":1000,"accessibility":true,"input":false,"tap":true,"trackpad":true,"connected":true,"capturing":true,"forwarded":999}"#.data(using: .utf8)!
+let live = UbuntuGesturesStatus.live(report, pid: 20, now: 1001)
+expect("working capture is not marked broken by Input Monitoring flag", live?.summary.hasPrefix("Capture active") == true)
+expect("swipe forwarding is available for verification", live?.forwarded == 999)
+expect("stale report rejected", UbuntuGesturesStatus.live(report, pid: 20, now: 1020) == nil)
+expect("other process rejected", UbuntuGesturesStatus.live(report, pid: 21, now: 1001) == nil)
+expect("future report rejected", UbuntuGesturesStatus.live(report, pid: 20, now: 990) == nil)
 var nestedLayout = false
 let timer = Timer(timeInterval: 0, repeats: false) { _ in nestedLayout = true }
 RunLoop.main.add(timer, forMode: .default)

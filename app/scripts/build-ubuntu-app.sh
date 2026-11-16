@@ -66,7 +66,10 @@ for n in 16 32 128 256 512; do
   sips -s format png -z "$((n * 2))" "$((n * 2))" "$R/app/app/UbuntuVM.svg" --out "$T/UbuntuVM.iconset/icon_${n}x${n}@2x.png" >/dev/null
 done
 iconutil -c icns "$T/UbuntuVM.iconset" -o "$C/Resources/OmacVM.icns"
+# Build the Ubuntu-specific permission/status behavior; never install it here.
+OMACVM_UBUNTU_HELPER=1 "$R/src/gestures/mac/build.sh"
 HELPER=$C/Helpers/OmacVMGestures.app
+cp "$R/src/gestures/mac/build/OmacVMGestures.app/Contents/MacOS/omacvm-gestures" "$HELPER/Contents/MacOS/omacvm-gestures"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleName UbuntuVM Gestures' "$HELPER/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleDisplayName string UbuntuVM Gestures' "$HELPER/Contents/Info.plist" 2>/dev/null ||
   /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName UbuntuVM Gestures' "$HELPER/Contents/Info.plist"

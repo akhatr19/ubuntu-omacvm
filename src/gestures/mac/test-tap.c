@@ -46,6 +46,8 @@ static void check(int ok, const char *what) {
   if (!ok) fail = 1;
 }
 
+static int captureWindows(void) { return 1; }
+
 int main(void) {
   for (int i = 0; i < MAX_CLIENTS; i++) clients[i].fd = -1;
   isQemuFn = fakeQemu;
@@ -256,6 +258,18 @@ int main(void) {
   check(tapPort && lastPlace == kCGHeadInsertEventTap, "shareKeyboard \"no\" (a string): at the head");
   CFPreferencesSetAppValue(CFSTR("shareKeyboard"), NULL, SHARE_KEYBOARD_DOMAIN);
   CFPreferencesAppSynchronize(SHARE_KEYBOARD_DOMAIN);
+
+  frontChanged(700, NET_APP, 0, "Work", 77, 0);
+  check(!capturing, "window capture is off by default");
+  windowCaptureFn = captureWindows;
+  frontChanged(700, NET_APP, 0, "Work", 77, 0);
+  check(capturing && !frontIsVM, "window capture is opt-in without pretending it is a fullscreen Space");
+  frontChanged(500, -1, 0, "", 11, 1);
+  check(!capturing, "clicking another Mac app releases window capture");
+  frontChanged(700, NET_APP, 0, "Work", 77, 0);
+  windowCaptureFn = windowCapture;
+  frontChanged(700, NET_APP, 0, "Work", 77, 0);
+  check(!capturing, "turning off window capture releases it immediately");
 
   return fail;
 }

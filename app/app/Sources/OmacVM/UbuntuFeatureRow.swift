@@ -20,9 +20,9 @@ struct UbuntuFeatureRow: View {
                 .disabled(busy || state.vmRunning())
         }
         if feature == "gestures" {
-            SettingRow(title: "Gestures helper", subtitle: "Grant permissions to UbuntuVM Gestures, not the UbuntuVM launcher.", probe: "ubuntu-gesture-permissions") {
-                Button("Set Up Permissions…") { permissions = true }
-                Button("Repair Helper…") { installGestures() }.disabled(busy || state.vmRunning())
+            SettingRow(title: "Gestures helper", subtitle: "Return to macOS: Control + Option + Escape (⌃⌥ Esc).", probe: "ubuntu-gesture-permissions") {
+                Button("Gestures & Permissions…") { permissions = true }
+                Button("Install/Update Helper…") { installGestures() }.disabled(busy || state.vmRunning())
             }
             .sheet(isPresented: $permissions) { UbuntuGesturesPermissions() }
         }
@@ -54,52 +54,88 @@ struct UbuntuFeatureRow: View {
             }.value
             busy = false
             if let problem { error = problem }
-            else { state.updateVM(features: ["gestures=on"]) }
+            else { permissions = true; state.updateVM(features: ["gestures=on"]) }
         }
     }
 }
 
-/// Show permissions reported by the running helper, not its parent launcher.
+/// The running helper publishes capabilities; permission flags alone do not prove failure.
 struct UbuntuGesturesPermissions: View {
     @Environment(\.dismiss) private var dismiss
     @State private var status = "Checking the installed helper…"
+    @State private var live: UbuntuGesturesStatus.Live?
     @State private var checking = false
+    @State private var testStarted: Double?
+    @State private var captureWindow = UserDefaults(suiteName: "org.omacvm.gestures")?.bool(forKey: "CaptureWindow") ?? false
     private let helper = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/UbuntuVMGestures.app")
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("UbuntuVM Gestures permissions").font(.title2.bold())
-                Spacer()
-                Button("Close") { dismiss() }
+                Text("Gestures & Permissions").font(.title2.bold())
+                Spacer(); Button("Close") { dismiss() }
             }
-            Text("Give permissions to this helper. Selecting UbuntuVM.app, an old OmacVM helper, or a copy inside a build folder grants access to a different app.")
-            Text(helper.path).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-            HStack {
-                Button("Show Exact Helper in Finder") { NSWorkspace.shared.activateFileViewerSelecting([helper]) }
-                Button("Copy Helper Path") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(helper.path, forType: .string)
+            Text("Return to macOS: Control + Option + Escape (⌃⌥ Esc)").font(.headline)
+            Text("The VM stays running. Press the shortcut again from macOS to return.")
+            Picker("Capture gestures", selection: $captureWindow) {
+                Text("Fullscreen only").tag(false)
+                Text("Focused VM window too").tag(true)
+            }.pickerStyle(.segmented)
+            Text("Window capture is optional. Clicking another Mac app releases gestures. The setting applies to all VMs after the updated helper is installed.")
+                .font(.caption).foregroundStyle(.secondary)
+            Divider()
+            Text(status).textSelection(.enabled)
+            if let live {
+                Text("Accessibility: \(live.accessibility ? "Allowed" : "Not allowed") · Input Monitoring: \(live.input ? "Allowed" : "Not reported allowed")")
+                    .font(.caption).foregroundStyle(.secondary)
+                if live.tap && !live.input {
+                    Text("Input capture is active. A missing Input Monitoring flag does not mean your gestures are broken.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Divider()
-            Text("1. Open each privacy panel below. Click +, press Command–Shift–G, paste the helper path above, and select that app. Turn its switch on.")
             HStack {
-                Button("Open Accessibility…") { privacy("Privacy_Accessibility") }
-                Button("Open Input Monitoring…") { privacy("Privacy_ListenEvent") }
+                if !(live?.accessibility ?? status.contains("Accessibility: Allowed")) {
+                    Button("Allow Accessibility…") { privacy("Privacy_Accessibility") }
+                }
+                if !(live?.input ?? status.contains("Input Monitoring: Allowed")) {
+                    Button("Open Input Monitoring…") { privacy("Privacy_ListenEvent") }
+                }
+                Button("Check Again") { check() }.disabled(checking)
             }
-            Text("2. If an older UbuntuVM Gestures or OmacVM Gestures entry is already enabled but access still fails, remove that entry with − and add the exact helper above again.")
-            Text("3. After granting access, restart the helper and check again. Your VM does not need to be reinstalled.")
             HStack {
-                Button("Restart Helper") { restart() }.disabled(checking)
-                Button("Check Permissions Again") { check() }.disabled(checking)
-                if checking { ProgressView().controlSize(.small) }
+                Button("Test a Swipe") { testStarted = Date().timeIntervalSince1970 }
+                    .disabled(live?.tap != true || live?.connected != true)
+                    .help("Requires the updated helper and a connected VM. Focus the VM once, then return here.")
+                if let testStarted {
+                    Text((live?.forwarded ?? 0) >= testStarted ? "Gesture sent to the VM. Did Ubuntu respond?" : "Focus the VM and swipe with three or four fingers, then return here.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
-            Text(status).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-            Text("Accessibility and Input Monitoring are separate grants. The status is reported by the running helper; macOS may permit some input through Accessibility even when Input Monitoring is off.")
-                .font(.caption).foregroundStyle(.secondary)
+            DisclosureGroup("Helper and troubleshooting") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("The background helper receives these grants. Select UbuntuVM Gestures in Settings.")
+                    Text(helper.path).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                    HStack {
+                        Button("Show Helper in Finder") { NSWorkspace.shared.activateFileViewerSelecting([helper]) }
+                        Button("Copy Helper Path") {
+                            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(helper.path, forType: .string)
+                        }
+                        Button("Restart Helper") { restart() }.disabled(checking)
+                    }
+                    Text("If the helper is absent from a privacy panel, click +, press Command–Shift–G and paste its path. If gestures fail despite an enabled entry, remove and re-add that exact helper. Working grants are never reset automatically by the updated Ubuntu helper.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(.top, 8)
+            }
         }.padding(22).frame(width: 680)
-        .onAppear { check() }
+        .onChange(of: captureWindow) { _, value in
+            UserDefaults(suiteName: "org.omacvm.gestures")?.set(value, forKey: "CaptureWindow")
+        }
+        .task {
+            while !Task.isCancelled {
+                check()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in check() }
     }
 
@@ -109,7 +145,7 @@ struct UbuntuGesturesPermissions: View {
     private func restart() {
         let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = ["kickstart", "-k", "gui/\(getuid())/org.omacvm.gestures"]
-        do { try p.run(); status = "Restart requested. Check permissions again in a moment." }
+        do { try p.run(); status = "Restart requested; checking automatically…" }
         catch { status = error.localizedDescription }
     }
     private func check() {
@@ -117,12 +153,10 @@ struct UbuntuGesturesPermissions: View {
         checking = true
         let executable = helper.appendingPathComponent("Contents/MacOS/omacvm-gestures")
         Task {
-            let result = await Task.detached { () -> String in
+            let result = await Task.detached { () -> (String, UbuntuGesturesStatus.Live?) in
                 guard FileManager.default.isExecutableFile(atPath: executable.path) else {
-                    return "Helper not installed. Close this panel and choose Repair Helper."
+                    return ("Helper not installed. Use Install Helper and Enable in VM settings.", nil)
                 }
-                // A child spawned by this launcher can inherit its TCC
-                // responsibility. Read the daemon's own report instead.
                 let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
                 p.arguments = ["print", "gui/\(getuid())/org.omacvm.gestures"]
                 let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
@@ -133,18 +167,23 @@ struct UbuntuGesturesPermissions: View {
                     guard p.terminationStatus == 0,
                           let pid = launch.split(separator: "\n").map({ $0.trimmingCharacters(in: .whitespaces) })
                             .first(where: { $0.hasPrefix("pid = ") }).flatMap({ Int($0.dropFirst(6)) }) else {
-                        return "Helper is not running. Choose Restart Helper, then check again."
+                        return ("Helper is not running. Open troubleshooting to restart it.", nil)
                     }
+                    let report = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/omacvm/gestures/status.json")
+                    if let size = try? report.resourceValues(forKeys: [.fileSizeKey, .isSymbolicLinkKey]), size.isSymbolicLink != true,
+                       let count = size.fileSize, count <= 8192, let data = try? Data(contentsOf: report),
+                       let value = UbuntuGesturesStatus.live(data, pid: pid) { return (value.summary, value) }
+                    // Older helpers report only flags. Keep them neutral and target the missing grant.
                     let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/omacvm-gestures.log")
                     let reader = try FileHandle(forReadingFrom: log)
                     defer { try? reader.close() }
                     let size = try reader.seekToEnd()
                     try reader.seek(toOffset: size > 262144 ? size - 262144 : 0)
-                    return UbuntuGesturesStatus.parse(String(decoding: reader.readDataToEndOfFile(), as: UTF8.self), pid: pid)
-                        ?? "Waiting for a current permission report. Restart the helper and check again."
-                } catch { return error.localizedDescription }
+                    let flags = UbuntuGesturesStatus.parse(String(decoding: reader.readDataToEndOfFile(), as: UTF8.self), pid: pid) ?? "Permission flags unavailable."
+                    return (flags.replacingOccurrences(of: "Not granted", with: "Not reported allowed") + "\nLive diagnostics need the updated helper. If gestures work, keep using them; a missing permission flag alone is not a failure. Install the packaged helper from VM settings when convenient.", nil)
+                } catch { return (error.localizedDescription, nil) }
             }.value
-            status = result; checking = false
+            status = result.0; live = result.1; checking = false
         }
     }
 }

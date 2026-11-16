@@ -311,7 +311,7 @@ guest "App VM" app "" swipe OMACVM_GESTURES_HOST=127.0.0.1 > "$T/guest5" 2>&1 ||
 wait "$MAC" || true
 reject "$T/guest5" "guest: swipe out on"
 # 4. The event tap after a VM app (re)starts; its place with shareKeyboard (a throwaway domain).
-clang -O1 -Wall -Wno-unused-function "-DSHARE_KEYBOARD_DOMAIN=CFSTR(\"$SHARE_DOMAIN\")" -o "$T/test-tap" "$HERE/test-tap.c" "$HERE/scroll_ns.m" \
+clang -O1 -Wall -Wno-unused-function "-DSHARE_KEYBOARD_DOMAIN=CFSTR(\"$SHARE_DOMAIN\")" "-DCAPTURE_WINDOW_DOMAIN=CFSTR(\"$SHARE_DOMAIN\")" -o "$T/test-tap" "$HERE/test-tap.c" "$HERE/scroll_ns.m" \
   -F/System/Library/PrivateFrameworks -framework MultitouchSupport -framework ApplicationServices -framework Carbon \
   -framework CoreFoundation -framework AppKit -framework IOKit
 "$T/test-tap" > "$T/tap" 2>&1 || fail=1
@@ -319,7 +319,7 @@ grep -E '^(ok|FAIL) ' "$T/tap"
 n=$(grep -c "cannot create the event tap again" "$T/tap" || true)
 if [[ $n == 1 ]]; then echo "ok   a failed re-creation is logged once (two tries)"; else echo "FAIL logged $n times" >&2; fail=1; fi
 # 5. The escape combo's way out and back.
-clang -O1 -Wall -Wno-unused-function -o "$T/test-escape" "$HERE/test-escape.c" "$HERE/scroll_ns.m" \
+clang -O1 -Wall -Wno-unused-function "-DCAPTURE_WINDOW_DOMAIN=CFSTR(\"$SHARE_DOMAIN\")" -o "$T/test-escape" "$HERE/test-escape.c" "$HERE/scroll_ns.m" \
   -F/System/Library/PrivateFrameworks -framework MultitouchSupport -framework ApplicationServices -framework Carbon \
   -framework CoreFoundation -framework AppKit -framework IOKit
 "$T/test-escape" > "$T/escape" 2>&1 || fail=1
@@ -398,3 +398,18 @@ if [[ $n == 7 ]]; then echo "ok   each new device for the trackpad is logged (tr
 n=$(grep -c "MultitouchSupport did not start the built-in trackpad (0xe00002d6)" "$T/trackpads" || true)
 if [[ $n == 1 ]]; then echo "ok   a start that failed is logged"; else echo "FAIL a failed start logged $n times, want 1" >&2; fail=1; fi
 (( fail == 0 )) || { cat "$T/out" "$T/out2" "$T/err" "$T/guest3" "$T/identity" >&2; exit 1; }
+
+# Ubuntu live diagnostics: no actual helper, input tap or user settings.
+clang -O1 -Wall -Wno-unused-function -o "$T/test-status" "$HERE/test-status.c" "$HERE/scroll_ns.m" \
+  -F/System/Library/PrivateFrameworks -framework MultitouchSupport -framework ApplicationServices -framework Carbon -framework CoreFoundation -framework AppKit -framework IOKit
+mkdir -p "$T/status-home/Library/Application Support/omacvm"
+"$T/test-status" "$T/status-home"
+python3 - "$T/status-home/Library/Application Support/omacvm/gestures/status.json" <<'PYSTATUS'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1]); value = json.loads(path.read_text())
+assert value['schema'] == 1 and value['pid'] > 0
+assert value['accessibility'] and not value['input'] and not value['tap'] and not value['connected']
+assert path.stat().st_mode & 0o777 == 0o600
+assert not path.with_suffix('.tmp').exists()
+print('ok   live status reports actual capabilities in an atomic private file')
+PYSTATUS

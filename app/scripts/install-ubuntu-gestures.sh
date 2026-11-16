@@ -4,7 +4,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 source "$HERE/vm-common.sh"
 HELPER=$HERE/../../Helpers/OmacVMGestures.app
-[[ -d $HELPER ]] || HELPER=$HERE/../dist/UbuntuVM.app/Contents/Helpers/OmacVMGestures.app
+[[ -d $HELPER ]] || HELPER="$HERE/../dist/UbuntuVM Installer.app/Contents/Helpers/OmacVMGestures.app"
 [[ -d $HELPER ]] || die 'Build UbuntuVM.app first (the signed Gestures helper is required)'
 TOKEN="$HOME/Library/Application Support/omacvm-bridge/token"
 if [[ ! -f $TOKEN ]]; then

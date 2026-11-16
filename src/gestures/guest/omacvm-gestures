@@ -601,6 +601,7 @@ def notify(text, ms=2500):
 # per VM, remembered here.
 ESC_HINT_FILE = "/var/lib/omacvm/escape-hint-shown"
 _esc_hint_shown = False
+_capture_hint_at = None
 
 
 def escape_notice(keys):
@@ -1429,7 +1430,12 @@ def handle(p, pad, keys, glide):
     elif p[0] == b"K":
         keys.key(int(p[1]), int(p[2]))
     elif p[0] == b"S":
+        global _capture_hint_at
         state = p[1].decode()
+        if state == "on" and os.environ.get("OMACVM_GUEST_OS") == "ubuntu":
+            now = time.monotonic()
+            if (_capture_hint_at is None or now - _capture_hint_at > 60) and notify("Gestures captured — return to macOS: Control + Option + Escape (⌃⌥ Esc)", 6000):
+                _capture_hint_at = now
         print(f"omacvm-gestures: capture {state}", flush=True)
         if state != "on":
             SWIPE.cancel()

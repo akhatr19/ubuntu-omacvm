@@ -10,6 +10,7 @@ if [[ ${OMACVM_HELPER_TEST:-0} == 1 ]]; then
   ID=org.omacvm.test.gestures; NAME="OmacVM Test Gestures"
   DEFS=(-DPORT=47930 "-DGESTURES_DOMAIN=CFSTR(\"$ID\")" '-DBRIDGE_DIR="omacvm-test-bridge"' -DGESTURES_TEST_IDENTITY=1)
 fi
+[[ ${OMACVM_UBUNTU_HELPER:-0} != 1 ]] || DEFS+=(-DUBUNTU_GESTURES=1)
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 ../../icon/make-icns.sh "$APP/Contents/Resources/OmacVM.icns"
 # -target: without it clang takes the build Mac's macOS as the minimum (a build on

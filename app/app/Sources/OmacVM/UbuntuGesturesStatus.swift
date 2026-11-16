@@ -13,3 +13,34 @@ enum UbuntuGesturesStatus {
         return "Accessibility: \(ax)\nInput Monitoring: \(input)"
     }
 }
+
+extension UbuntuGesturesStatus {
+    struct Live: Decodable {
+        let schema: Int
+        let pid: Int
+        let updated: Double
+        let accessibility: Bool
+        let input: Bool
+        let tap: Bool
+        let trackpad: Bool
+        let connected: Bool
+        let capturing: Bool
+        let forwarded: Double
+
+        var summary: String {
+            if !accessibility { return "Accessibility is needed for input capture." }
+            if !tap { return "Input capture is not active. Restart the helper if it stays this way." }
+            if !trackpad { return "Keyboard capture ready; no trackpad or Magic Mouse detected." }
+            if !connected { return "Ready — waiting for a connected VM." }
+            if capturing { return "Capture active — return to macOS with ⌃⌥ Esc." }
+            return "Ready — focus a VM in the selected capture mode."
+        }
+    }
+
+    static func live(_ data: Data, pid: Int, now: Double = Date().timeIntervalSince1970) -> Live? {
+        guard data.count <= 8192, let value = try? JSONDecoder().decode(Live.self, from: data),
+              value.schema == 1, value.pid == pid, value.updated >= now - 10, value.updated <= now + 5,
+              value.forwarded >= 0, value.forwarded <= now + 5 else { return nil }
+        return value
+    }
+}

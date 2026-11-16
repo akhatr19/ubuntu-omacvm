@@ -28,8 +28,11 @@ LABEL=$(omacvm_label gestures)
 PL=~/Library/LaunchAgents/$LABEL.plist
 launchctl bootout gui/$(id -u)/$LABEL 2>/dev/null || true
 mkdir -p "$HOME/Applications" "$HOME/Library/LaunchAgents"
-rm -rf "$HOME/Applications/$APP_NAME"
-ditto "$APP" "$HOME/Applications/$APP_NAME"
+# Keep the signed helper intact when its packaged contents did not change.
+if ! diff -qr -x .DS_Store "$APP" "$HOME/Applications/$APP_NAME" >/dev/null 2>&1; then
+  rm -rf "$HOME/Applications/$APP_NAME"
+  ditto "$APP" "$HOME/Applications/$APP_NAME"
+fi
 if [[ $APP_NAME == UbuntuVMGestures.app && -d $HOME/Applications/OmacVMGestures.app &&
       $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$HOME/Applications/OmacVMGestures.app/Contents/Info.plist" 2>/dev/null) == "$LABEL" ]]; then
   rm -rf "$HOME/Applications/OmacVMGestures.app"

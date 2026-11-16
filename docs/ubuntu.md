@@ -169,6 +169,24 @@ needed. Full-screen three-finger swipes are handled by GNOME itself; the
 Hyprland workspace queries and swipe-out interception are disabled. The
 virtual touchpad's tap-to-click is off to avoid duplicate Mac clicks.
 
+**Gestures & Permissions** shows capture capability separately from permission
+flags. Input Monitoring being unreported does not mark working gestures as broken.
+Open only the missing permission's panel; the updated Ubuntu helper never resets
+permission entries automatically. Live reports expire after ten seconds and must
+match the running helper's PID. Older helpers retain a neutral, flag-only display.
+
+Capture defaults to **Fullscreen only**. **Focused VM window too** opts into
+windowed capture; switching to another Mac app releases it. **Control + Option +
+Escape (⌃⌥ Esc)** returns control to macOS, leaving Ubuntu running; press it
+again to return to the VM. The guest shows a short, throttled reminder when
+capture starts. **Test a Swipe** confirms a gesture was sent through the helper's
+VM connection; check Ubuntu's response to confirm the complete path works.
+
+After updating the app, stop the VM and choose **Install/Update Helper…** once to
+install this helper version. Normal app updates leave the existing helper alone.
+The capture-start reminder also needs the updated guest integration. Working
+permissions are preserved; macOS still controls all grants.
+
 For manual setup, run `app/scripts/install-ubuntu-gestures.sh`, then the
 update command above with `--feature gestures=on`. Turning gestures off does
 not uninstall the shared Mac helper or reset its permissions.

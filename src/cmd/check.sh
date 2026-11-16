@@ -846,6 +846,8 @@ if [[ $GESTURES == on ]]; then
     p=$(last_line "$GESTURES_LOG" 'omacvm-gestures: permissions: ')
     if [[ -n $GESTURES_OLD ]]; then
       warn "keyboard/trackpad access" "not known: the running Gestures (pid $GESTURES_OLD, started by macOS, not its LaunchAgent) writes no log; omacvm update starts one that does"
+    elif [[ $gst == listening && $p == *"Accessibility granted"* && $p == *"Input Monitoring MISSING"* ]]; then
+      ok "keyboard/trackpad access" "Accessibility allowed; helper running. Input Monitoring is not reported allowed; test gestures before repairing permissions"
     elif [[ $p == *MISSING* ]]; then
       miss=$(sed -E 's/^permissions: //; s/[A-Za-z ]+ granted(, )?//g; s/ MISSING//g; s/[, ]+$//' <<<"$p")
       # On in System Settings and still refused: an entry macOS kept for an
