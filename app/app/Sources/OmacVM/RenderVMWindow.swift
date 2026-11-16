@@ -302,6 +302,18 @@ enum RenderVMWindow {
         }
         sheet("sheet-4-all-vms") { AllVMsView(storage: all, selected: all.vms.first?.folder) {} }
         if Product.isUbuntu {
+            // Exercise the real data-library query against disposable metadata.
+            let id = String(repeating: "a", count: 32)
+            let dataFolder = tmp.appendingPathComponent(".ubuntu-data/" + id)
+            try? FileManager.default.createDirectory(at: dataFolder, withIntermediateDirectories: true)
+            let image = dataFolder.appendingPathComponent("data.img")
+            FileManager.default.createFile(atPath: image.path, contents: Data())
+            _ = truncate(image.path, 4 << 30)
+            let personal: [String: Any] = ["schema": 1, "id": id, "name": "Personal", "size_gb": 4,
+                                           "initialized": true, "attached_vm": UbuntuPersonalData.canonical(config.folder)]
+            try? JSONSerialization.data(withJSONObject: personal).write(to: dataFolder.appendingPathComponent("volume.json"))
+            let binding: [String: Any] = ["schema": 1, "id": id, "ready": true, "folders": ["Projects", "Documents"]]
+            try? JSONSerialization.data(withJSONObject: binding).write(to: config.folder.appendingPathComponent("data-volume.json"))
             let networkFile = config.folder.appendingPathComponent(DeveloperNetwork.file)
             let savedFast = try? Data(contentsOf: config.folder.appendingPathComponent("fast-network"))
             try? FileManager.default.removeItem(at: config.folder.appendingPathComponent("fast-network"))
@@ -719,6 +731,7 @@ enum RenderVMWindow {
                 .write(to: folder.appendingPathComponent("vm.env"), atomically: true, encoding: .utf8)
             fm.createFile(atPath: folder.appendingPathComponent("efi-vars.fd").path, contents: Data())
             fm.createFile(atPath: folder.appendingPathComponent("ready").path, contents: Data())
+            if Product.isUbuntu { try "ubuntu\n".write(to: folder.appendingPathComponent("guest-os"), atomically: true, encoding: .utf8) }
             let disk = folder.appendingPathComponent("disk.img")
             fm.createFile(atPath: disk.path, contents: Data(count: 8 << 20))
             guard truncate(disk.path, 64 << 30) == 0 else { return nil }

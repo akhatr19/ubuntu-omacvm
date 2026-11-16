@@ -322,6 +322,8 @@ def qemu_plan(vm, port, desktop=False):
             '-device', 'virtserialport,bus=vser0.0,nr=2,chardev=host,name=org.ubuntu.vm.host',
             '-qmp', f'unix:{q(run_dir / "qmp")},server=on,wait=off',
             '-serial', f'file:{q(vm / "logs/developer-console.log")}', '-monitor', 'none']
+    import volumes
+    args += volumes.arguments(vm)
     share = vm / 'mac-folder'
     if share.exists():
         text = share.read_text().strip()

@@ -21,6 +21,10 @@ for name in clipboard displays media audio-latency; do
 done
 check "audio latency utility" command -v pactl
 check "shared folder service" systemctl is-enabled --quiet omacvm-mac-folder
+if [[ -f /etc/ubuntu-vm/personal-data.json ]]; then
+  check "personal data mounted before login" systemctl is-active --quiet ubuntu-vm-personal-data
+  check "personal data filesystem" mountpoint -q /mnt/ubuntu-vm-personal
+fi
 source /etc/omacvm/env
 [[ ${OMACVM_FEATURE_battery:-off} != on ]] || check "battery module" test -d /sys/module/omacvm_battery
 [[ ${OMACVM_FEATURE_camera:-off} != on ]] || check "camera device" test -c /dev/video42

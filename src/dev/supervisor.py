@@ -81,8 +81,10 @@ def supervise(vm, desktop=False):
         if file.exists():
             file.unlink()
     port = metadata['ssh_port']
-    args, environment = qemu_plan(vm, port, desktop)
-    process = subprocess.Popen(args, env=environment)
+    import volumes
+    with volumes.locked(vm):
+        args, environment = qemu_plan(vm, port, desktop)
+        process = subprocess.Popen(args, env=environment)
     state = {'qemu_pid': process.pid, 'supervisor_pid': os.getpid(), 'ssh_port': port,
              'ready': False, 'ports': [], 'conflicts': [], 'mode': 'desktop' if desktop else 'headless'}
     state_file = run_dir / 'state.json'

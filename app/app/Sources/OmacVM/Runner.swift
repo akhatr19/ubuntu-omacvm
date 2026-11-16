@@ -18,6 +18,7 @@ import OmacVMWindow
 final class Runner {
     let config: VMConfig
     private(set) var process: Process?
+    private var personalDataArguments: [String] = []
     private let sleep = VMHostSleepCoordinator()
     private var gpuMemory: GPUMemoryWatch?
     private var featuresRoute: ControlCentreRoute?
@@ -231,6 +232,7 @@ final class Runner {
         // moves no other device (the VM finds it by its tag, wherever it is).
         let share = MacFolder.plan(c)
         macFolder = share.record
+        a += personalDataArguments
         a += share.arguments
         // Drag and drop (drag-drop on only; docs/drag-and-drop.md): its port
         // and the read-only drop share after everything, the Mac folder too,
@@ -426,7 +428,12 @@ final class Runner {
 
     func start() throws {
         let c = config
-        if Product.isUbuntu { _ = try UbuntuNetworking.read(c) }
+        var dataLock: Int32 = -1
+        if Product.isUbuntu {
+            _ = try UbuntuNetworking.read(c)
+            (dataLock, personalDataArguments) = try UbuntuPersonalData.start(c)
+        }
+        defer { if dataLock >= 0 { close(dataLock) } }
         startAudioThread = Settings.audioThread
         (audioDeviceStart, audioFramesStart) = AudioLatencyWatch.outputNow()
         try FileManager.default.createDirectory(at: c.folder.appendingPathComponent("logs"),

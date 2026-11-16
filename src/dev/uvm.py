@@ -24,6 +24,15 @@ def parser():
     p.add_argument('-e', '--env', help='managed environment name')
     p.add_argument('-f', '--manifest', type=Path, help='project uvm.json (otherwise search parent folders)')
     sub = p.add_subparsers(dest='command')
+    data = sub.add_parser('data', help='independent personal disks, attachments, snapshots and forks')
+    data.add_argument('--vm', type=Path, required=True)
+    data.add_argument('action', choices=('list', 'create', 'attach', 'detach', 'snapshot', 'snapshots', 'fork', 'restore'))
+    data.add_argument('--id')
+    data.add_argument('--name')
+    data.add_argument('--size-gb', type=int, default=64)
+    data.add_argument('--folder', action='append')
+    data.add_argument('--snapshot-id')
+    data.add_argument('--output', type=Path)
     drive = sub.add_parser('drive', help='Finder file service and previewable directional sync')
     drive.add_argument('--vm', type=Path, required=True)
     drive.add_argument('--qga')
@@ -204,6 +213,9 @@ def main(argv=None):
         state = rt.ensure_up(vm)
         os.execv('/usr/bin/nc', ['nc', '127.0.0.1', str(state['ssh_port'])])
     args = parser().parse_args(argv)
+    if args.command == 'data':
+        import volumes
+        return volumes.main(args)
     if args.command == 'drive':
         import files
         return files.main(args)

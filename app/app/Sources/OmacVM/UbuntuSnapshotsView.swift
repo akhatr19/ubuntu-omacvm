@@ -30,7 +30,7 @@ struct UbuntuSnapshotsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack { Text("Snapshots — \(config.name)").font(.title2.bold()); Spacer(); Button("Refresh") { refresh() }.disabled(job.busy); if !embedded { Button("Close") { dismiss() }.disabled(job.busy) } }
-            Text("Disk checkpoints include Ubuntu, installed tools, files and compute/display settings. Stop the VM first. RAM and shared Mac data are excluded; Mac sharing/network choices stay local.").foregroundStyle(.secondary)
+            Text("Disk checkpoints include Ubuntu, installed tools, files and compute/display settings. Stop the VM first. RAM, personal data disks and shared Mac data are excluded; Mac sharing/network choices stay local. After restoring, repair personal data setup in Files before starting.").foregroundStyle(.secondary)
             if running { Text("Close this panel and stop the VM from its card before creating or restoring a checkpoint.").foregroundStyle(.orange) }
             HStack { TextField("Checkpoint name", text: $name); Button("Create Checkpoint") { action("create", extra: ["--name", name]) }.disabled(running || loading || job.busy || name.isEmpty) }
             List(rows, selection: $selected) { row in
@@ -63,7 +63,7 @@ struct UbuntuSnapshotsView: View {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-        .confirmationDialog("Restore this checkpoint? The current disk is preserved first. Shared Mac data is unchanged.", isPresented: $restoring) {
+        .confirmationDialog("Restore this checkpoint? The current disk is preserved first. Separate personal data and shared Mac data are unchanged.", isPresented: $restoring) {
             Button("Preserve Current State and Restore") { if let selected { action("restore", extra: ["--id", selected]) } }
         }
         .onChange(of: job.busy) { _, value in onBusy?(value) }

@@ -18,7 +18,7 @@ import runtime as rt
 from supervisor import free_port
 
 RECORD = 'checkpoint-head.json'
-SKIP = {'logs', RECORD, 'workspace-known_hosts', 'developer-network-status', 'update.log'}
+SKIP = {'logs', RECORD, 'workspace-known_hosts', 'developer-network-status', 'update.log', 'data-volume.json', 'data-needs-setup'}
 
 
 def read_json(path):
@@ -61,7 +61,8 @@ def checkpoint(vm, identity):
 def stopped(vm):
     # The disk lock coordinates with QEMU; the owner lock coordinates with the
     # developer supervisor so no cold start can race a restore or checkpoint.
-    with open(rt.sockets(vm) / 'owner.lock', 'a') as owner, open(vm / 'disk.img', 'r+b') as disk:
+    import volumes
+    with volumes.locked(vm), open(rt.sockets(vm) / 'owner.lock', 'a') as owner, open(vm / 'disk.img', 'r+b') as disk:
         try:
             fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.lockf(disk, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -124,7 +125,7 @@ def create_locked(vm, label):
         record = {'schema': 1, 'id': identity, 'parent': parent['parent'], 'lineage': parent['lineage'],
                   'label': label, 'vm_name': vm.name, 'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                   'branch': parent['branch'], 'kind': 'stopped-disk', 'runtime_sha256': rt.runtime_identity(),
-                  'external_mac_data': 'excluded', 'ram': 'not included'}
+                  'external_mac_data': 'excluded', 'personal_data': 'excluded', 'ram': 'not included'}
         write_json(temporary / 'checkpoint.json', record)
         for path in temporary.rglob('*'):
             if path.is_file(): path.chmod(0o400)
@@ -172,9 +173,11 @@ def restore(vm, identity):
             child = temporary / 'vm'
             # Host publication and Mac-folder grants belong to this VM, not
             # another branch's historical Linux state. Never re-enable them on restore.
-            for file in ('developer-network.json', 'mac-folder', 'fast-network', 'mac-setup', 'finder-drive.json'):
+            for file in ('developer-network.json', 'mac-folder', 'fast-network', 'mac-setup', 'finder-drive.json', 'data-volume.json'):
                 (child / file).unlink(missing_ok=True)
                 if (vm / file).is_file(): shutil.copyfile(vm / file, child / file)
+            if (vm / 'data-volume.json').exists():
+                (child / 'data-needs-setup').touch()
             restored_env = (child / 'vm.env').read_text()
             for field in ('NAME', 'SSH_PORT'):
                 match = re.search(r'^' + field + r'=.*$', local_env, re.M)
@@ -221,7 +224,7 @@ def fork(vm, identity, name):
         text = re.sub(r'^NAME=.*$', "NAME='" + target.name + "'", text, flags=re.M)
         text = re.sub(r'^SSH_PORT=.*$', 'SSH_PORT=' + str(port), text, flags=re.M)
         (child / 'vm.env').write_text(text)
-        for key in ('ssh-key', 'ssh-key.pub', 'known_hosts', 'workspace-known_hosts', 'identity-ready', 'mac-folder', 'mac-setup', 'fast-network', 'finder-drive.json'):
+        for key in ('ssh-key', 'ssh-key.pub', 'known_hosts', 'workspace-known_hosts', 'identity-ready', 'mac-folder', 'mac-setup', 'fast-network', 'finder-drive.json', 'data-volume.json'):
             (child / key).unlink(missing_ok=True)
         rt.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'ubuntu-branch', '-f', child / 'ssh-key'])
         settings = network.load(child, {})

@@ -268,3 +268,55 @@ keys are excluded, but this is not a guest-data sanitization tool.
 For offline checks: `python3 -m unittest discover -s src/dev/tests -v`.
 Disposable integration tests use `UVM_TEST_MODE=1`, `UVM_HOME`, `UVM_VMS_ROOT`
 and `UVM_SSH_CONFIG` pointing at test-only directories.
+
+### Personal data independent of a VM
+
+Workbench → Files → **Personal data across VMs** manages expandable ext4 disks
+outside VM folders, in `.ubuntu-data` beside the VMs. Create a disk, choose
+folders, and select **Attach & Set Up** while the VM is stopped. Setup boots
+privately without networking, a display or shared Mac folders, then shuts down.
+It requires a working QEMU guest agent and a desktop account with UID/GID 1000.
+The current VM installer supports Ubuntu; this does not add other distro installers.
+
+First setup copies selected Projects, Documents, Downloads, Pictures, Music and
+Videos folders into a new disk. Original folders stay on the system disk. Bind
+mounts make the shared versions appear at their usual home paths; detaching
+reveals the originals again. Existing disks keep their own data rather than
+merging another VM's local folders. Dotfiles, desktop settings, credentials,
+installed tools and caches remain per VM. Project-local `.venv`, `node_modules`
+and build outputs still travel with Projects and may need rebuilding when switching
+distros; use per-VM toolchains or devcontainers where possible. Copying originals uses additional
+space; review them yourself before removing anything. Finder's existing Home
+share can browse the mounted personal folders while that VM is running.
+
+Only one VM can own a writable data disk. Stop and detach it before attaching
+it elsewhere. Even a paused QEMU process retains ownership. A missing disk or
+incomplete setup blocks normal startup rather than creating an empty replacement.
+Deleted VMs leave their data disks intact and available to attach elsewhere.
+An interrupted first format is never repeated automatically: repair can mount
+an already-created matching filesystem; an unformatted interrupted disk may
+need replacing with a newly created disk. No source folders are deleted.
+
+Data snapshots are independent of system checkpoints and require the owning VM
+to stop. A data fork clones a selected snapshot into a new, detached disk for
+experiments or agents; changes are independent and are not merged. Data restore
+requires detachment and saves a snapshot of the current data first. These local
+snapshots are not backups against loss of the Mac or its drive. System checkpoints
+and environment exports exclude personal data. A system restore keeps the
+attachment but requires **Repair / Reconfigure** before boot, since the restored
+guest may contain older mounting software. System forks start without a data disk.
+There is no coordinated system-and-data restore or simultaneous writable sharing
+in this version.
+
+The same operations are available through the packaged CLI:
+
+```sh
+uvm data --vm /path/to/VM create --name Personal --size-gb 64
+uvm data --vm /path/to/VM list
+uvm data --vm /path/to/VM attach --id DATA_ID --folder Projects --folder Documents
+uvm data --vm /path/to/VM snapshot --id DATA_ID --name 'Before experiment'
+uvm data --vm /path/to/VM snapshots --id DATA_ID
+uvm data --vm /path/to/VM fork --id DATA_ID --snapshot-id SNAPSHOT_ID --name Agent
+uvm data --vm /path/to/VM detach
+uvm data --vm /path/to/VM restore --id DATA_ID --snapshot-id SNAPSHOT_ID
+```

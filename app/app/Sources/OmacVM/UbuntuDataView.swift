@@ -50,8 +50,9 @@ struct UbuntuDataView: View {
     @State private var linux = ""
     @State private var running = true
     @State private var mounting = false
+    @State private var personalBusy = false
     @State private var problem: String?
-    private var busy: Bool { job.busy || mounting }
+    private var busy: Bool { job.busy || mounting || personalBusy }
     private var enabled: Bool { FileManager.default.fileExists(atPath: config.folder.appendingPathComponent("finder-drive.json").path) }
 
     var body: some View {
@@ -61,6 +62,8 @@ struct UbuntuDataView: View {
             if let problem { Text(problem).foregroundStyle(.red).textSelection(.enabled) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    UbuntuPersonalDataView(config: config, running: running) { personalBusy = $0 }
+                    Group {
                     GroupBox("Linux data in Mac Finder") {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Full Filesystem shows all stored Linux data read-only. Home lets you edit your Linux files. Finder's Command–Shift–Period shows hidden files.")
@@ -112,7 +115,8 @@ struct UbuntuDataView: View {
                             Text("Copies new and newer files. Newer destination files stay; nothing is deleted. Replaced files go into a timestamped backup folder. Preview again if either side changes before syncing. rsync must be installed in Ubuntu (the Files profile or Enable Finder & Sync supplies it).").font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
                     }
-                }.disabled(busy)
+                    }.disabled(busy)
+                }.disabled(job.busy || mounting)
             }
             if busy { ProgressView(mounting ? "Connecting Finder…" : "Preparing Ubuntu files…") }
             ScrollView { Text(job.output).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 90)
