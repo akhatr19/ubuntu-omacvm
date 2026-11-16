@@ -540,6 +540,9 @@ enum RenderVMWindow {
     /// note). Its picture starts where Swipe out's does, the row above it;
     /// and the picture on its own, light and dark.
     private static func missionControlPictures(_ state: AppState, _ usual: Preview) {
+        let original = state.config
+        state.config.guest = .omarchy
+        defer { state.config = original }
         let folder = state.config.folder
         let features = folder.appendingPathComponent("features"), omarchy = folder.appendingPathComponent("omarchy")
         let savedFeatures = try? Data(contentsOf: features), savedOmarchy = try? Data(contentsOf: omarchy)
