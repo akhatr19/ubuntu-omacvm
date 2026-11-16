@@ -106,7 +106,7 @@ def copy_tree(source, destination):
                     if item.is_symlink():
                         raise ValueError('definition contains an external symlink')
                 shutil.copytree(path, target)
-        elif path.name in ('disk.img', 'efi-vars.fd'):
+        elif path.name in ('disk.img', 'efi-vars.fd', 'installer.iso'):
             copy_disk(path, target)
         elif path.is_file():
             if path.stat().st_size > 1024 * 1024:

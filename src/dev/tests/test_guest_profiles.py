@@ -8,12 +8,24 @@ import unittest
 from unittest import mock
 
 import guests
+import checkpoints
 import homefolders
 import runtime
 import workspace
 
 
 class GuestProfilesTests(unittest.TestCase):
+    def test_custom_checkpoint_keeps_installation_media(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'vm'
+            source.mkdir()
+            (source / 'installer.iso').write_bytes(bytes(2 * 1024 * 1024))
+            (source / 'install-iso').touch()
+            target = Path(directory) / 'snapshot'
+            checkpoints.copy_tree(source, target)
+            self.assertEqual(2 * 1024 * 1024, (target / 'installer.iso').stat().st_size)
+            self.assertTrue((target / 'install-iso').exists())
+
     def test_legacy_omarchy_and_unknown_guests_are_distinguished(self):
         with tempfile.TemporaryDirectory() as directory:
             vm = Path(directory)
