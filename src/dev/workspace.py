@@ -67,7 +67,7 @@ class Session:
             rt.ensure_up(self.vm)
         else:
             if (self.vm / 'fast-network').exists():
-                raise ValueError('turn off Fast network in VM settings to use localhost project connections')
+                raise ValueError('turn off Fast network in Workbench → Network & SSH to use localhost project connections')
             if not self.qga:
                 raise ValueError('the desktop VM guest-agent socket is required')
             if not rt.disk_busy(self.vm):
@@ -183,6 +183,7 @@ def main(args):
         raise ValueError('choose a Mac folder to import')
     if action == 'export' and (not args.source or Path(args.source).exists()):
         raise ValueError('choose a new .tar.gz file for the export')
+    if action in ('code', 'container'): integrate.editor_executable()
     session.ensure()
     if action == '_proxy':
         # Keep protocol output clean: ensure() status is routed to stderr by the caller.

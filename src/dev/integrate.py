@@ -63,6 +63,7 @@ def ssh_config(vm, install=False, metadata=None, proxy=None):
 
 
 def editor(vm):
+    editor_executable()  # Validate before starting a stopped VM.
     ensure_up(vm)
     alias, _ = ssh_config(vm, install=True)
     metadata = config(vm)
@@ -70,14 +71,38 @@ def editor(vm):
     open_editor(alias, path)
 
 
+EDITOR_FOLDERS = (Path('/Applications'), Path.home() / 'Applications')
+
+def editor_executable():
+    override = os.environ.get('UVM_CODE')
+    if override:
+        command = shutil.which(override)
+        if not command: raise ValueError('UVM_CODE does not name an executable editor command')
+        return command
+    settings = HOME / 'editor.json'
+    selected = None
+    if settings.exists():
+        if settings.is_symlink() or settings.stat().st_size > 8192: raise ValueError('invalid editor settings')
+        value = json.loads(settings.read_text())
+        if not isinstance(value, dict) or value.get('schema') != 1: raise ValueError('unsupported editor settings')
+        selected = value.get('application')
+        if selected is not None and (not isinstance(selected, str) or not selected.startswith('/')):
+            raise ValueError('choose an absolute VS Code application path')
+    applications = [Path(selected)] if selected else [folder / app for folder in
+        EDITOR_FOLDERS for app in
+        ('Visual Studio Code.app', 'Visual Studio Code - Insiders.app')]
+    for app in applications:
+        for name in ('code', 'code-insiders'):
+            command = app / 'Contents/Resources/app/bin' / name
+            if command.is_file() and os.access(command, os.X_OK): return str(command)
+    if selected: raise ValueError('Selected VS Code installation is unavailable. Choose another in App settings → Editor.')
+    command = shutil.which('code-insiders') or shutil.which('code')
+    if not command: raise ValueError('Choose VS Code or VS Code Insiders in App settings → Editor. Remote - SSH is required.')
+    return command
+
+
 def open_editor(alias, path):
-    executable = shutil.which('code')
-    if not executable:
-        candidates = [Path('/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code'),
-                      Path.home() / 'Applications/Visual Studio Code.app/Contents/Resources/app/bin/code']
-        executable = next((str(p) for p in candidates if p.exists()), None)
-    if not executable:
-        raise ValueError('install VS Code and its Remote - SSH extension first')
+    executable = editor_executable()
     uri = 'vscode-remote://ssh-remote+' + alias + urllib.parse.quote(path)
     run([executable, '--folder-uri', uri])
 
