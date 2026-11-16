@@ -18,7 +18,10 @@ import network
 ROOT = Path(__file__).resolve().parents[2]
 HOME = Path(os.environ.get('UVM_HOME', Path.home() / 'Library/Application Support/UbuntuVM')).expanduser().resolve()
 VMS = Path(os.environ.get('UVM_VMS_ROOT', Path.home() / 'UbuntuVMs')).expanduser().resolve()
-RUNTIME_COMMIT = 'fc0dc8f2140190ba7ed6718f14ac65196410242c'
+RUNTIME_COMMIT = 'ef322b67d0f99b49cfcf95c9e35ee033dc391405'
+RUNTIME_COMMITS = (RUNTIME_COMMIT, 'fc0dc8f2140190ba7ed6718f14ac65196410242c')
+# The ad-hoc signed runtime shipped in development builds 1–15.
+LEGACY_RUNTIME_IDENTITIES = {'1d162e43702af928f28884d6db1bdab49680c7d75873cc0077f36b891006aa10': RUNTIME_COMMITS[1]}
 
 
 def run(args, **kwargs):
@@ -39,11 +42,22 @@ def app_bundle():
     return app
 
 
-def runtime_identity():
-    resources = app_bundle() / 'Contents/Resources'
+def runtime_identity(resources=None):
+    resources = resources or app_bundle() / 'Contents/Resources'
     files = sorted(p for p in (resources / 'runtime').rglob('*') if p.is_file())
     files.append(resources / 'firmware/edk2-aarch64-code.fd')
     return fingerprint({str(p.relative_to(resources)): digest(p) for p in files})
+
+
+def runtime_resources(identity=None):
+    resources = app_bundle() / 'Contents/Resources'
+    if not identity or identity == runtime_identity(): return resources
+    import re
+    if re.fullmatch(r'[0-9a-f]{64}', identity):
+        archived = resources / 'compat-runtimes' / identity
+        if archived.is_dir() and not archived.is_symlink() and runtime_identity(archived) == identity:
+            return archived
+    raise ValueError('this environment needs its pinned runtime; install an app build that includes it')
 
 
 def vm_folder(name):
@@ -294,10 +308,8 @@ def local_resources(vm):
 
 def qemu_plan(vm, port, desktop=False):
     metadata = config(vm)
-    if metadata.get('runtime_sha256') and metadata['runtime_sha256'] != runtime_identity():
-        raise ValueError('installed runtime differs from this environment; use its pinned app build')
     app = app_bundle()
-    resources = app / 'Contents/Resources'
+    resources = runtime_resources(metadata.get('runtime_sha256'))
     runtime = resources / 'runtime/bin/OmacVM'
     run_dir = sockets(vm)
     local = local_resources(vm)

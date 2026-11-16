@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 
 from manifest import digest, fingerprint, integer, load, write_json
-from runtime import HOME, ROOT, RUNTIME_COMMIT, VMS, config, disk_busy, private_dir, run, runtime_identity, vm_folder
+from runtime import HOME, ROOT, RUNTIME_COMMIT, RUNTIME_COMMITS, VMS, config, disk_busy, private_dir, run, runtime_identity, runtime_resources, vm_folder
 from supervisor import free_port
 
 FILES = ('disk.img', 'efi-vars.fd')
@@ -41,10 +41,11 @@ def describe(bundle, expected=None):
     data = json.loads(descriptor.read_text())
     if not isinstance(data, dict) or data.get('schema') != 1 or data.get('kind') not in ('base', 'environment'):
         raise ValueError('unsupported bundle')
-    if data.get('runtime_commit') != RUNTIME_COMMIT or set(data.get('files', {})) != set(FILES):
+    if data.get('runtime_commit') not in RUNTIME_COMMITS or set(data.get('files', {})) != set(FILES):
         raise ValueError('bundle runtime or files differ from this release')
     if data.get('runtime_sha256') != runtime_identity():
-        raise ValueError('bundle needs the exact runtime shipped with its base build')
+        if not re.fullmatch(r'[0-9a-f]{64}', str(data.get('runtime_sha256', ''))): raise ValueError('invalid bundle runtime identity')
+        runtime_resources(data.get('runtime_sha256'))
     if not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', str(data.get('user', ''))):
         raise ValueError('invalid bundle user')
     integer(data.get('disk_gb'), 1, 65536, 'bundle disk_gb')
@@ -75,7 +76,7 @@ def export(vm, target, kind='environment'):
     try:
         for name in FILES:
             copy_disk(vm / name, temporary / name)
-        data = {'schema': 1, 'kind': kind, 'runtime_commit': RUNTIME_COMMIT, 'runtime_sha256': runtime_identity(),
+        data = {'schema': 1, 'kind': kind, 'runtime_commit': metadata.get('runtime_commit', RUNTIME_COMMIT), 'runtime_sha256': metadata.get('runtime_sha256', runtime_identity()),
                 'user': metadata['user'], 'disk_gb': (vm / 'disk.img').stat().st_size // (1024 ** 3),
                 'files': {name: digest(temporary / name) for name in FILES}}
         if kind == 'environment':
@@ -157,7 +158,7 @@ def create(bundle, settings, name, expected=None, imported=False):
         run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'uvm-management', '-f', temporary / 'ssh-key'])
         write_json(temporary / 'uvm-env.json', {'schema': 1, 'name': name, 'vm_name': vm_name,
                    'user': data['user'], 'manifest': settings, 'ssh_port': port,
-                   'base_sha256': settings['base']['sha256'], 'image_sha256': checksum, 'runtime_commit': RUNTIME_COMMIT,
+                   'base_sha256': settings['base']['sha256'], 'image_sha256': checksum, 'runtime_commit': data['runtime_commit'],
                    'runtime_sha256': data['runtime_sha256']})
         if imported:
             restore_definition(private_dir(temporary / 'definition'), data)

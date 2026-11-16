@@ -1,14 +1,14 @@
 #!/bin/bash
-# Reuse the verified upstream 3.4.1 runtime; compile and package the Ubuntu launcher.
-# Usage: build-ubuntu-app.sh UPSTREAM_OmacVM.app NEW_OUTPUT.app
+# Reuse the verified upstream runtime; optionally retain a pinned older runtime.
+# Usage: build-ubuntu-app.sh UPSTREAM_OmacVM.app NEW_OUTPUT.app [COMPAT_OmacVM.app]
 set -euo pipefail
 R=$(cd "$(dirname "$0")/../.." && pwd)
 BASE=${1:?upstream OmacVM.app required}
 OUT=${2:?new output .app path required}
-UPSTREAM=fc0dc8f2140190ba7ed6718f14ac65196410242c
+UPSTREAM=ef322b67d0f99b49cfcf95c9e35ee033dc391405
 [[ ! -e $OUT && $OUT == *.app ]] || { echo 'Output must be a new .app path' >&2; exit 2; }
 [[ $(/usr/libexec/PlistBuddy -c 'Print :OmacVMCommit' "$BASE/Contents/Info.plist") == "$UPSTREAM" ]] || {
-  echo 'Use the official OmacVM 3.4.1 app (runtime sources must match)' >&2; exit 2;
+  echo 'Use the official OmacVM 3.4.6 app (runtime sources must match)' >&2; exit 2;
 }
 git -C "$R" diff --quiet "$UPSTREAM" -- app/runtime || {
   echo 'Runtime sources changed: build a matching runtime first' >&2; exit 2;
@@ -41,6 +41,27 @@ PYBUILD
 APP="$T/UbuntuVM Installer.app"
 C=$APP/Contents
 ditto "$BASE" "$APP"
+if [[ -n ${3:-} ]]; then
+  codesign --verify --deep --strict "$3"
+  python3 - "$R" "$3" "$C/Resources" <<'PYCOMPAT'
+import pathlib, plistlib, shutil, sys
+repo, app, resources = map(pathlib.Path, sys.argv[1:])
+sys.path.insert(0, str(repo / 'src/dev'))
+from runtime import RUNTIME_COMMITS, LEGACY_RUNTIME_IDENTITIES, runtime_identity
+info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+source = app / 'Contents/Resources'
+identity = runtime_identity(source)
+commit = LEGACY_RUNTIME_IDENTITIES.get(identity, info.get('UbuntuVMRuntimeCommit', info.get('OmacVMCommit')))
+if commit not in RUNTIME_COMMITS:
+    raise SystemExit('Compatibility runtime is not an approved upstream build')
+target = resources / 'compat-runtimes' / identity
+for name in ('runtime', 'firmware'):
+    shutil.copytree(source / name, target / name)
+(target / 'SOURCE_COMMIT').write_text(commit + '\n')
+if (source / 'compat-runtimes').is_dir():
+    shutil.copytree(source / 'compat-runtimes', resources / 'compat-runtimes', dirs_exist_ok=True)
+PYCOMPAT
+fi
 cp "$BIN/OmacVM" "$C/MacOS/OmacVM"
 cp "$R"/app/scripts/*.sh "$C/Resources/scripts/"
 COPYFILE_DISABLE=1 tar --no-xattrs --exclude=.build --exclude=build --exclude=__pycache__ --exclude='*.pyc' -czf - -C "$R" omacvm uvm src README.md CHANGELOG.md docs |
@@ -58,6 +79,7 @@ ID=${OMACVM_UBUNTU_BUNDLE_ID:-org.omacvm.ubuntu}
 /usr/libexec/PlistBuddy -c "Set :NSLocalNetworkUsageDescription UbuntuVM connects Ubuntu to the network. Optional LAN SSH and port forwards let other devices reach the services you publish." "$C/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :NSBluetoothAlwaysUsageDescription UbuntuVM optional integrations access Bluetooth only when you enable them." "$C/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :OmacVMCommit $COMMIT" "$C/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :UbuntuVMRuntimeCommit string $UPSTREAM" "$C/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :UbuntuVMInstaller bool true' "$C/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :UbuntuVMAppBundleIdentifier string $ID" "$C/Info.plist"
 mkdir "$T/UbuntuVM.iconset"
