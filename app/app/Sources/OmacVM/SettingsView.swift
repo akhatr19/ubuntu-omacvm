@@ -272,6 +272,7 @@ struct SettingsSections: View {
                 }
                 if !Product.isUbuntu {
                     SwipeOutRow(tick: state.tick, gesturesOff: VMRecord.isOff("gestures", folder: state.config.folder))
+                    MissionControlRow(state: state, gesturesOff: VMRecord.isOff("gestures", folder: state.config.folder))
                 }
                 ShareKeyboardRow(tick: state.tick)
             }

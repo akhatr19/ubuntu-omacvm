@@ -204,7 +204,7 @@ jobs:
       - name: Building behind a proxy (scutil samples, the VM's variables, sudo, systemd-run, retries, a stub proxy)
         run: src/tests/proxy.sh
 
-      - name: Freeing disk space (2 update snapshots kept, a trim at apply, omacvm check's line)
+      - name: Freeing disk space (2 update snapshots kept, a trim at apply, omacvm check's lines; the 10 GiB warning, #749)
         run: src/tests/disk-space.sh
 
       - name: Free page reporting in 256 KiB blocks (page_reporting_order 6, omacvm check's line)
@@ -284,6 +284,8 @@ jobs:
 
       - name: The moves gate (3.4.0 on) reads the move matrix's rows
         run: src/tests/move-45-gate.sh
+      - name: The move matrix's app rows quit the test app copy, also the one its self-update opens
+        run: src/tests/move-45-app-quit.sh
 
       - name: New VMs are Omarchy 4.5 (CLI and app agree; omarchy-mac 4.0 for tests only)
         run: src/tests/omarchy-route.sh
@@ -316,6 +318,9 @@ jobs:
 
       - name: Prebuilt image disk is packed sparse (holes for zeros, owner root)
         run: src/tests/prebuilt-sparse.sh
+
+      - name: Prebuilt disk unpacks sparse and bounded (never past the end, free-space floor, odd archives refused)
+        run: src/tests/prebuilt-unpack.sh
 
 
       - name: Ctrl-C in omacvm build stops the running step (a terminal, no VM)
@@ -370,8 +375,14 @@ jobs:
       - name: Magic Mouse swipe setting (3 or 4 fingers) and its row, only with a Magic Mouse
         run: src/tests/app-mouse-swipe.sh
 
+      - name: Tests that build the app's SwiftUI sources take a toolchain with SwiftUI's macro plugins (Xcode's when a CLT swiftc comes first)
+        run: src/tests/swift-macros.sh
+
       - name: The VM window's settings stay across launches (defaults, two VMs, 3.0's files, the CLI; Extra brightness as the user left it)
         run: src/tests/app-settings.sh
+
+      - name: The e2e gate's row texts stay UTF-8 (cut by characters) and its result.json is always written
+        run: src/tests/e2e-result.sh
 
       - name: The note when macOS refuses the VM's keyboard tap
         run: src/tests/app-key-access.sh
@@ -435,6 +446,9 @@ jobs:
       - name: Move to Omarchy 4.5 backs up first, resumes, undoes byte for byte and deletes the backup only when asked
         run: src/tests/app-move-vm.sh
 
+      - name: apply's copy into the VM names the part that failed and shows the VM's tar errors
+        run: src/tests/apply-copy.sh
+
       - name: Update VM never waits forever (disk errors, a read-only VM, a hang), asks before a kernel build
         run: src/tests/update-vm-watch.sh
 
@@ -455,6 +469,8 @@ jobs:
 
       - name: e2e harnesses wait between rows while someone is at the Mac; CI runners paused for a gate
         run: src/tests/e2e-person.sh
+      - name: The built-in display switched off by display-unplug.sh always comes back (its tool's dry run only, no display changed)
+        run: src/tests/e2e-builtin-display.sh
 
       - name: Test copies only as the test identity (a lane's own id has no macOS permissions)
         run: src/tests/e2e-relabel-id.sh
@@ -637,7 +653,7 @@ jobs:
       - name: omacvm features' checklist keeps one line per row (pseudo-terminal, #292)
         run: src/tests/features-checklist.sh
 
-      - name: Guest check accepts NOTCH right above the built-in display (offline)
+      - name: Guest check accepts NOTCH right above the built-in display; its NOTCH workspaces line (offline)
         run: src/tests/notch-check.sh
 
       - name: omacvm check's full screen including notch row (strip not back after a display change; offline)
@@ -649,11 +665,17 @@ jobs:
       - name: OmacVM's edits of Omarchy's shell on omarchy-mac's and upstream's files (toasts, display panels, night light indicator)
         run: src/tests/omarchy-shell.sh
 
+      - name: OmacVM's bar widgets and display panel read the bar's colours and font only through a guard (no TypeError lines when the shell reloads a plugin)
+        run: src/tests/plugin-bar-null.sh
+
       - name: Per-display workspaces step aside on Omarchy 4.5 and keep the rest of bindings.lua
         run: src/tests/workspaces-45.sh
 
       - name: The move to Omarchy 4.5 (preflight, steps, resume, keyring, report), its repo files, pkg-add's marking
         run: src/tests/omarchy-move.sh
+
+      - name: Test disk images made with a time limit (hdiutil create hung in newfs_hfs and newfs_apfs on the mini's CI host)
+        run: src/tests/hdiutil-create-test.sh
 
       - name: OmacVM.app moves VM folders safely (fixtures, small disk images)
         run: src/tests/app-storage.sh
@@ -901,6 +923,12 @@ jobs:
       - name: The memory step on a VM whose kernel was replaced since it started (the move to Omarchy 4.5)
         run: src/tests/memory-kernel-replaced.sh
 
+      - name: OmacVM's zram cap is the size zram-generator takes, also over Omarchy 4.5's own file; omacvm check's "zram swap" line (bash 5, GNU tools, as in the VM)
+        run: src/tests/memory-zram-order.sh
+
+      - name: OmacVM's disk rule (no I/O scheduler on the VM's own disks) is read after Omarchy 4.5's, matches only QEMU's disks and passes udevadm verify
+        run: src/tests/disk-scheduler.sh
+
       - name: omarchy-mac's ARM package targets that Omarchy's repo has (bash 5, as in the VM)
         run: src/tests/omarchy-targets.sh
 
@@ -950,6 +978,9 @@ jobs:
           src/drop/tests/run.sh
           src/drop/tests/build-helper.sh
 
+      - name: Mission Control, VM side (the plugin copy byte for byte as pinned; on, off, the owner's own copy, lock, a hung shell, a gesture of the user's own; made-up shell and Hyprland)
+        run: src/missioncontrol/tests/run.sh
+
       - name: Mac input methods' Fcitx5 module builds (Ubuntu's Fcitx5), its protocol test with the sanitizers
         run: |
           sudo apt-get update -q
@@ -976,6 +1007,12 @@ jobs:
 
       - name: Transparent panels on Hyprland 0.57 (#630) on every route; omacvm_vm.lua, its installer, its check line
         run: LUA=/tmp/lua-5.5.0/src/lua src/tests/dmabuf-alpha.sh
+
+      - name: The Mac's Night Shift from Omarchy's menu and keys (#748); OmacVM's folder ahead of Omarchy's bin, --status's time limit, check's line, the one shell restart
+        run: LUA=/tmp/lua-5.5.0/src/lua src/tests/nightlight-path.sh
+
+      - name: A video or animated background sends the Mac its first frame, never an empty picture (#747)
+        run: src/tests/wallpaper-video.sh
 
       - name: No tap-to-click on the virtual trackpad (a pinch's start was a right click on Omarchy 4.5); input.lua parses as Lua 5.5; check's line
         run: |

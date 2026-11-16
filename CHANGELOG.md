@@ -3,6 +3,273 @@
 What's new in each OmacVM release. The release notes on GitHub say the same
 in more words.
 
+## 3.4.6
+
+The app's questions get the keys, ISO keyboards type the right keys, and the move to 4.5 rides out SSH drops.
+
+- **Questions get the keys (OmacVM.app).** A question that came up with no click in the app, such
+  as USB's when a device was plugged in (experimental), did not get the keys: Return and Escape
+  went to the VM. macOS 14 and later bring a background app to the front only if the app there
+  lets it. Now these questions take the keys from the VM, on every Space and over a full-screen
+  VM, but never from another Mac app you work in: there they float and a click answers them. The
+  same holds for the lost desktop, Features… in the app menu, an update's shutdown timeout, a VM
+  that did not wake with the Mac, a start from a terminal and the USB Devices… list. The lost
+  desktop's, the Mac setup's and the fast network's questions wait half a second, as USB's does,
+  so a Return typed a moment earlier does not answer them. See
+  [ADR 0068](docs/adr/0068-ask-keys.md). Needs the app update, from the VM's next start.
+- **Correction to 3.2.18's USB Devices… entry (#660).** It says the mini's check was still to run
+  and the list on screen was not checked. Both were done for 3.2.18 on a Mac mini M4: with the
+  screen locked or nobody at it, each press built the list; in a window, opened by a real click on
+  the menu, the list came up and Connect, Disconnect and Return worked. Over a full-screen VM it is
+  still not checked.
+- **Move to Omarchy 4.5** (#771): a Resume could stop at step 4 with "OmacVM did not update in
+  the VM" and no reason. Right after the VM starts, its SSH can let the Mac in and then drop the
+  connection for a moment, without a message. The update's SSH key, Bridge token, control centre
+  and Touch ID keys and the copy of OmacVM now try again for up to 2 minutes when SSH drops, as
+  the move's own steps already did, and a copy cut between its two moves is put back first. An
+  apply that stops without its own message now says so, with the exit code and its last step. The
+  move keeps the last 9 apply logs (was 4).
+- **Apple ISO keyboards** (#784, reported by @epicoun): the key left of 1 and the key left of Z
+  reached the VM swapped, so on a German ISO keyboard `^` typed `<` and `<` typed `^`. OmacVM's
+  QEMU has a fix for this, but it acts only when told the keyboard is ISO, and the app never told
+  it. The app now does at each VM start, from macOS's own keyboard type, as OmacVM Gestures
+  already did. Needs the app update, from the VM's next start; an XKB swap set up in the VM as a
+  workaround must be taken out again.
+- **The Mac's pointer in full screen** (#788, reported and cause found by @hadiskeini): with the
+  hidden `macPointer` setting and "Keep the Dock and hot corners away" on, the cursor pushed along
+  a display edge stopped about 200 points before a corner, while the VM's pointer went on. Near a
+  corner OmacVM moves the Mac's cursor itself, and its first move came before the cursor was
+  detached from the mouse, so the push could move it on and OmacVM lost track of it. The cursor is
+  now detached first, and OmacVM takes the cursor's real place when the two differ. Needs the app
+  update. Without `macPointer` the Mac's cursor is hidden over the VM, so this was not seen there.
+
+## 3.4.5
+
+Mission Control is a normal option now; faster disks on Omarchy 4.5; new VMs no longer need about
+70 GB free.
+
+- **Mission Control** is no longer experimental. It stays off until you switch it on (Omarchy 4.5,
+  Trackpad gestures), and its row in the VM window (Input) now shows a small picture of what it
+  does: the windows spread out, with the workspaces along the top. It comes with version 1.0.2 of
+  the [Mac Mission Control](https://github.com/gillesgoetsch/omarchy-mac-mission-control) plugin by
+  @gillesgoetsch: a Hyprland config reload while the overview is open no longer leaves most keys
+  doing nothing until the next open and close. It comes with Update VM; with Mission Control on,
+  Omarchy's shell restarts once.
+- **Mission Control with Swipe out to macOS**: a sideways swipe in the open overview on the first
+  workspace (or the empty last one) moved the Mac's Space instead of going through the overview's
+  workspaces. While the overview is open, sideways swipes now stay in the VM, on every display. It
+  comes with Update VM.
+- **Disk speed on Omarchy 4.5** (#778): Omarchy 4.5 sets the kyber I/O scheduler on every disk,
+  also on the VM's virtual disk, where the Mac does the real scheduling. 4k random writes ran at
+  about half the speed of Omarchy 4.0. OmacVM's own rule
+  (`/etc/udev/rules.d/61-omacvm-io-scheduler.rules`) now keeps the VM's own disks (QEMU's NVMe and
+  virtio disks) on no scheduler; a USB disk passed in keeps Omarchy's choice. Update VM puts it in
+  place and switches the running VM at once; `omacvm check` has a "disk scheduler" line.
+- **New VM from a prebuilt image** no longer needs about 70 GB free (#305, reported by
+  @brianmerchant). The image's 64 GB disk holds about 7 GB; its unpack (`tar -xS`) sometimes made
+  macOS write the other 57 GB as real zeros, and on a Mac with less space the disk filled. OmacVM
+  now unpacks the disk itself, so it stays at about 7 GB. Before the download it checks for room
+  (the VM's disk, the download and 10 GB kept free for macOS) and says what is needed; during the
+  unpack it stops, and removes the unfinished VM, if the drive gets below 10 GB free.
+- **Bridge** no longer keeps macOS's `locationd` busy while a VM runs. It read the Wi-Fi name,
+  BSSID, security and country code every 5 seconds, and each read made macOS check the Location
+  permission: about 2 % of a core on a MacBook Air M2. It now reads them when the Wi-Fi changes,
+  after a wake and at least every 5 minutes; the signal is still read every 5 seconds. The bar
+  shows the same as before.
+- **Venus no longer refuses the shaders of ggml's Vulkan backend** (#624, cause found by
+  @hadiskeini, reported by @Fail-Safe, @dandomin and @epicoun). From 3.2.21 Venus refused every
+  shader with a local array whose size is a specialization constant expression
+  (`float a[WMITER * TM]`), so llama.cpp, whisper.cpp and Superwhisper's workers lost their GPU
+  context when they created their matrix multiply pipelines. OmacVM now works such sizes out after the app's specialization, as
+  the Mac's shader compilers do, and counts workgroup arrays of such a size at their real size.
+  Expressions that drivers could read differently (an overflow, a division by 0, a shift past the
+  width) are still refused, and `logs/qemu.log` says which kind it was. Of the 1267 shaders in
+  llama.cpp b11791's Vulkan library, 603 were refused before; none are with the values ggml sets.
+- **llama.cpp on KosmicKrisp still needs `--no-host`** (#786): with KosmicKrisp (macOS 26 and
+  newer) llama.cpp b11791 stops while it loads a model with its default flags ("not enough space
+  in the buffer"). Start its tools with `--no-host` (`llama-bench --no-host 1`); then they run on
+  the GPU. MoltenVK and whisper.cpp are not affected.
+- **A Vulkan app that lost its graphics** is named in full in the VM's note (#624, reported by
+  @epicoun). The VM's kernel cuts process names at 15 letters ("cleanup-worker-" for Superwhisper's
+  `cleanup-worker-vulkan`); the VM now looks the full name up among the running apps when exactly
+  one fits. `logs/qemu.log`, the app's log and `omacvm check` keep the 15 letters. It comes with
+  Update VM.
+
+## 3.4.4
+
+- **omacvm check** read the bar's state (`omarchy-shell notchbar state`) with Qt's locale warning
+  in front of it when it ran without a UTF-8 locale (as it does over ssh), so it reported "two bars
+  on the MacBook" for a bar that was parked under the strip, and "the bar does not answer" for Full
+  screen including notch. It now takes the state's JSON line alone (#769).
+- **Mission Control** (experimental, off by default, Omarchy 4.5): four fingers up in the
+  full-screen VM spread out the windows of each display, following the fingers, with the
+  workspaces along the top; four fingers down close it, and while it is open four fingers sideways
+  go through the workspaces. It is the
+  [Mac Mission Control](https://github.com/gillesgoetsch/omarchy-mac-mission-control) plugin for
+  Omarchy's shell by @gillesgoetsch (MIT), shipped unchanged from its release v1.0.1.
+  Switch it in the app's VM window (Input > Mission Control), the control centre or with
+  `omacvm enable mission-control`; it needs Trackpad gestures. A copy you added yourself with
+  `omarchy plugin add` is only switched: the switch never writes or removes it. Off shows the
+  windows, disables the plugin and takes its gesture and keys out of Hyprland;
+  `omacvm apply --reinstall mission-control` repairs windows left hidden
+  ([details](docs/features.md#mission-control)).
+- **Move to Omarchy 4.5** keeps more detail when OmacVM does not get into the VM (#771): the
+  reason names the part of the copy that failed (SSH, clearing the last copy, unpacking, swapping
+  it in) and the log shows the VM's own tar errors, which were thrown away before. Each try's
+  `move-apply.log` is kept (the four before it as `move-apply.log.1` to `.4`), so a Resume no
+  longer writes over the one that failed. Nothing else changes in the move.
+
+## 3.4.3
+
+- **Omanotch** on Omarchy 4.5 (#763, #764, reported by the project owner on an M4 Max; the same
+  symptom as #734 on an M1 Max): the hidden indicators now open when the pointer comes onto the
+  indicators themselves (or, with Skip the notch, onto the place left of the notch where they
+  open), stay open on the way from one to the other, and no longer open under the notch.
+  In "Full screen including notch" with the indicators in the bar's right part (where a VM moved
+  from Omarchy 4.0 keeps them), they opened when the pointer was anywhere left of about the notch's
+  right edge, notch included, and shut as it moved right towards them. On an active indicator (the
+  bell) they opened and shut again after about 120 ms, so none of them could be clicked: on 3.4.1
+  in every mode, on 3.4.2 in a window and in full screen without the notch. With Skip
+  the notch opening them left of the notch, they stay open from the active ones across the notch
+  to them; the notch and the items between (clock, tray) do not open them. When Skip the notch opens
+  them left of the notch (the owner's layout on a 14" MacBook Pro or a MacBook Air), the left part
+  of the bar (the workspaces) no longer opens them either, and once open they shut when the pointer
+  goes left of them. Omarchy's own rule (the bar left of its centre) counts only in Omarchy's own
+  layout (the indicators in the centre's left part, not moved by Skip the notch), and only left of
+  the notch. Only Omanotch's bar has this: with Omanotch off (Omarchy's own bar) the indicators
+  still follow Omarchy's rule. Update VM brings it (bar patch v43).
+- **Omanotch** with Skip the notch, on Omarchy 4.0 and 4.5 (#757, reported by the project owner on
+  an M1 Max): tray apps that start about a second apart (often at login) no longer show the tray
+  right of the notch first and then move it left. A tray that shows up now waits until its apps
+  stop coming (1.5 s without a new one, 8 s at most) and shows once, on the side it stays on.
+  While it waits, its place on the bar is empty and it can't be clicked, on the notch strip too
+  (before, that lasted 150 ms). An app that starts later than that can still move the shown tray
+  once, at once. Update VM brings it (bar patch v43).
+- **The move to Omarchy 4.5 finishes when your shell sets `OMARCHY_PATH`** (#742, reported by
+  @epicoun): the move stopped at its last step, Omarchy's own update, and every Resume stopped there
+  again ("OMARCHY_PATH does not match this Omarchy command."). `omarchy update` runs itself again
+  through your login shell, and a line in zsh's or fish's startup files that sets `OMARCHY_PATH` won
+  over OmacVM's. OmacVM now runs it under bash, which reads no startup file there; this also covers
+  Graphics › Vulkan and a prebuilt VM's first update. A move that stopped like this: update the app,
+  then Resume. When Omarchy's update stops, the move now shows Omarchy's own line, not just "did not
+  finish". For your own `omarchy update`: troubleshooting 62.
+- **Omanotch's strip shows the workspace you are on** on Omarchy 4.5 (#760, reported by
+  @mlamoure): its workspaces stayed on slot 1 whatever the display showed, because Omarchy 4.5 loads
+  its workspaces widget from its own folder, so the copy Omanotch fixed for the strip never ran and
+  the strip showed the hidden NOTCH output's own workspaces. With a window on another workspace the
+  strip's widget also had another width than the bar that takes its clicks, so clicks to its right
+  could land beside the item. The strip's bar now uses Omanotch's copy of the widget; the bars on
+  your displays keep Omarchy's. Omarchy 4.0 was not affected. If you had made your own copy of the
+  workspaces widget for this, put Omarchy's Workspaces back in the bar's layout. Update VM brings
+  it (bar patch v43); `omacvm check` warns when the strip's copy of the widget is gone,
+  unpatched or does not load.
+
+## 3.4.2
+
+- **Display scale sticks on the VM's main screen** (#738, reported by the project owner): the
+  display panel's scale buttons kept the scale only for a moment ("Full screen including notch": 1.6
+  became 1.333, then 2), and after one the screen no longer followed the window's size. Omarchy's
+  newer scaling command (seen in omarchy 4.5.0-3) saves the scale in a rule of its own for the
+  screen, whose "preferred" mode put the old size back, and OmacVM took that rule for one of yours.
+  The panel now keeps the main screen's scale in `omarchy_monitor_scale` itself, OmacVM reads that
+  exact rule as Omarchy's scale (Omarchy's keys and menu write it too), and a VM that already has it
+  gets it moved into `omarchy_monitor_scale` at the next login. Any other monitor rule of yours
+  stays as it is, and with your own rule for the main screen the buttons work as before. Update VM
+  brings it.
+- **Omanotch** on Omarchy 4.5 with Skip the notch (#757, reported by the project owner on an M1
+  Max): the bar's layout no longer goes stale, nothing slides under the notch, and tray apps that
+  start together show the tray once, where it stays. With bar patch v39 (3.4.1), after a widget was
+  added or its settings changed, the layout could stay as it was until the pointer came onto the bar
+  (the shell log says "Binding loop detected for property notchWidths"), and a tray that showed up
+  or grew later slid under the notch from right to left. Now the layout counts the size each item
+  asks for, an item that grows takes its new place at once, and a tray that shows up waits unseen
+  until its own place has been quiet for 150 ms (1 s at most). Not fixed yet: tray apps that start
+  seconds apart (often the case at login) can still show the tray right of the notch first and move
+  it left once, at once. Update VM brings it (bar patch v41).
+- **Full screen including notch** (#758, reported by the project owner on an M1 Max): windows start
+  closer under the notch. The bar in the strip now reserves the strip less 5 px of Omarchy's top
+  window gap (all of the gap when it is under 5), so with Omarchy's 10 px gap a tiled window's
+  border is about 7 pt below the notch instead of 12 at the guest's scale 2 (5 px below the bar,
+  not 10). The bar reserves the whole strip, as before, while a workspace with a top gap of 0 shows
+  (Omarchy's drop-down console, Super+`; 4.0's scratchpad, Super+S), with a gap of 0 (Omarchy's
+  no-gaps toggle) and under a transparent bar on Omarchy 4.0 (its flush-bar sets the gap to 0).
+  Window, the notch via Omanotch and the moment before the full screen starts are unchanged.
+  Update VM brings it (bar patch v41).
+- **Night Shift from the Omarchy menu** (#748): the menu's Nightlight switches the Mac's Night Shift
+  again, on Omarchy 4.0 and 4.5, and on 4.0 so does Super+Ctrl+N. Both ran Omarchy's own night light
+  (hyprsunset in the VM) instead: Omarchy puts its own commands first on the desktop's PATH, ahead
+  of OmacVM's. OmacVM now puts one folder of its own ahead of them, with only the Bridge's night
+  light toggle in it. On Omarchy 4.5 Super+Ctrl+N stays Omarchy's Network panel; the menu and the
+  bar's Night Shift drive the Mac there. Update VM brings it and restarts Omarchy's bar once (after
+  the unlock when the VM is locked); with the Bridge off then, switching it on later does that
+  restart. `omacvm check`'s "Night Shift toggle" line now reads what the running shell really runs
+  and names the key only where there is one. 4.5's menu also reads the Mac's Night Shift for its
+  row: when the Bridge does not answer within 2 s, the row says off.
+- **Wallpaper with a video background** (#747): on Omarchy 4.5, which can play a video as the
+  background, the Mac's wallpaper now becomes the video's first frame. Before, OmacVM sent the Mac
+  an empty picture, the Mac refused it and kept the old wallpaper, and each try left one picture per
+  frame of the video in the VM's `/tmp` (its memory). An animated picture also sends its first
+  frame. When no picture comes out of a file, nothing is sent. Update VM brings it (it adds ffmpeg
+  where it is missing) and removes the frame files once.
+- **`omacvm check` warns when the VM's disk is nearly full** (#749): a "free space" line, a warning
+  under 10 GiB free, where Omarchy's own update stops ("You need at least 10 GiB free to safely
+  update Omarchy."). It says what to do: delete files in your home, or give the VM a larger disk
+  (Disk › Change… in the VM window, with the VM shut down).
+- **A video in Firefox keeps the Mac's display on** while it can be seen, as in Chromium (#750;
+  found by the 4.5 sweep; Omarchy 4.0 and 4.5). Firefox tells its wake locks only over D-Bus, and
+  the VM's display agent refused them, so a Firefox video never counted. Now "Playing video" and a
+  page's screen wake lock count; music, downloads and a video without a sound track do not. While
+  such a video can be seen, the VM's own screensaver and lock wait too, as they do for Chromium and
+  mpv (a small helper of the display agent holds Omarchy's idle, ADR 0072). Update VM brings it;
+  **restart Firefox once after Update VM** (a Firefox that was running during the update does not
+  count until then).
+- **zram on Omarchy 4.5** (#746): a 4.5 VM, new or moved from 4.0, had zram as big as its whole
+  memory (48 GB of zram in a 48 GB VM), not OmacVM's cap of a quarter of the memory, at most 8 GiB.
+  Omarchy 4.5 ships its own zram file (`/usr/lib/systemd/zram-generator.conf.d/90-omarchy.conf`,
+  `zram-size = ram`), and zram-generator reads such files by name, so it was read after OmacVM's
+  `90-omacvm.conf` and won. OmacVM's file is now `95-omacvm.conf`: after Omarchy's, before a file
+  of your own (`99-local.conf`, as Omarchy suggests), which still decides. Update VM, then restart
+  the VM. `omacvm check`'s "zram swap" line warns when zram is over the cap and says which file
+  sets it. 4.0 VMs keep the same size.
+- **x86 Linux apps** can be switched off again (#751). `omacvm disable x86-apps` and the control
+  centre ended with "x86 Linux apps was not set up" and put the feature back on (exit 4), on Omarchy
+  4.0 and 4.5: `pacman -R` was also given `box64`, a name OmacVM's package `omacvm-box64` only
+  provides, and stopped with "target not found". The same would have stopped the next box64 update.
+  Update VM, then switch it off.
+- **x86 Linux apps** on VMs built with Omarchy 4.5: after a restart, x86_64 programs went to
+  qemu-user instead of box64 and every dynamic one failed ("Could not open
+  '/lib64/ld-linux-x86-64.so.2'", #752). Omarchy 4.5's qemu-user rule for x86_64 was loaded after
+  box64's. While x86 apps is on, OmacVM now holds that one rule back
+  (`/etc/binfmt.d/qemu-x86_64-static.conf`, removed when off; qemu-user's other architectures stay).
+  Update VM fixes it, no restart and no box64 build. `omacvm check`'s "x86 apps" row now says which
+  rule gets x86_64 programs when it is not box64's.
+- **Bar widgets**: the Mac's Wi-Fi, Bluetooth, audio and Night Shift widgets and the display panel
+  no longer fill the shell's log with `TypeError: Cannot read property 'foreground' of null` (a few
+  hundred lines each time the shell reloads a plugin in place: Omanotch's first-login install,
+  Update VM, Omarchy updates; 3.4.0 and 3.4.1). While the shell swaps the bar, they use Omarchy's
+  own bar colour and font. Nothing changes on screen. Update VM brings it ([troubleshooting
+  59](docs/troubleshooting.md#59-the-shells-log-fills-with-typeerror-cannot-read-property-foreground-of-null)).
+- **Pause drawing while hidden** (experimental): when a VM keeps drawing although its window is out
+  of sight, the logs now say why. The app's log (`logs/qemu.log` in the VM's folder) says when it
+  told the VM to stop or to draw again, or why it could not (the VM's display channel closed, its
+  display agent not ready or too old). The VM's display agent (`journalctl --user -u
+  omacvm-displays`) says when a screen or window share keeps a display on, when Hyprland did not
+  turn a display off, or did not answer. Each is said once until it changes, so hours out of sight
+  add no lines. A VM started while the Mac's displays sleep now counts its window as out of sight
+  until they wake, as it already did for a locked Mac. Update VM brings the agent's part.
+- **Correction to 3.4.1: Full screen including notch after a start with the lid closed (#716).**
+  3.4.1 said QEMU takes the strip beside the notch once the full screen is on the MacBook's display.
+  That step is checked only by QEMU's own tests so far. On a MacBook Pro M1 Max with its built-in
+  display switched off by a test tool, a start used the remembered notch, the VM got it and QEMU
+  waited for the MacBook's display; the test ended before that display came back, so the strip
+  was not seen. A start with the lid really closed, then opened, is still to be checked. If the
+  strip stays black after you open the lid, leave full screen and enter it again on the MacBook's
+  display; if it is still black, start the VM again with the lid open (docs/troubleshooting.md).
+- Development: test disk images are made with a time limit, and a hung `hdiutil create` is ended and
+  what hung is written down (#744); the e2e kits log in to a test VM with its own key first (#745),
+  turn a MacBook's built-in display back on after a test that switched it off, close the test app
+  after it updated itself and say 60 s where they wait for a person (#740).
+
 ## 3.4.1
 
 - **Omanotch** on Omarchy 4.5 with Skip the notch (#734): the tray's hidden icons open next to the

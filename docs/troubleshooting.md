@@ -10,6 +10,29 @@ reviews, measuring pitfalls, how the VM apps work inside) are in
 ## Common problems
 
 - **First stop**: `omacvm check` names what is wrong and what to do.
+- **Omarchy's update says "You need at least 10 GiB free to safely update
+  Omarchy."**: the VM's disk is nearly full. `omacvm check` warns first
+  ("free space"). Delete files in your home you no longer need (they free
+  their space at once; system files stay in the 2 update snapshots until
+  newer ones replace them), or give the VM a larger disk: shut it down, then
+  Disk › Change… in its window. The VM grows into it at its next start.
+- **The move to Omarchy 4.5 stops at its last step, or `omarchy update` says
+  "OMARCHY_PATH does not match this Omarchy command."**: a line in your
+  shell's startup files sets `OMARCHY_PATH`. See
+  [62](#62-omarchy_path-does-not-match-this-omarchy-command-omarchy-45).
+- **Windows stay invisible, or Mission Control's overview stays on the
+  screen** (Mission Control on): switch it off in the app's VM window, or
+  `omacvm apply --reinstall mission-control --vm NAME`. See
+  [63](#63-mission-control-windows-stay-hidden-or-the-overview-stays-on-the-screen).
+- **The Omarchy menu's Nightlight tints the VM, the Mac's Night Shift does
+  not change** (Bridge on; up to 3.4.1): Omarchy puts its own commands first
+  on the desktop's PATH, so its own night light (hyprsunset) ran instead of
+  OmacVM's. On Omarchy 4.0 Super+Ctrl+N did the same. On Omarchy 4.5
+  Super+Ctrl+N opens Omarchy's Network panel: that is Omarchy's key there,
+  not a fault (these docs said it switched Night Shift up to 3.4.1). Fix:
+  Update VM. If `omacvm check` still warns on "Night Shift toggle", log out
+  and in. The next Nightlight from the menu turns the VM's tint off and
+  switches the Mac.
 - **A VM in Parallels, UTM or VMware Fusion**: OmacVM 3.4.0 retired those
   routes. The VM keeps running as it is, without OmacVM updates. Move to
   OmacVM.app: [how](../README.md#retired-routes).
@@ -36,6 +59,47 @@ reviews, measuring pitfalls, how the VM apps work inside) are in
   (Hyprland 0.57): Update VM (3.2.15) or
   `omacvm update`, then log out and in
   ([50](#50-notifications-panels-and-the-omarchy-menu-black-out-the-screen-hyprland-057)).
+- **The hidden indicators open far from them (left part of the bar, under
+  the notch) and shut on the way to them, or open on the bell and shut again**
+  (Omarchy 4.5, Omanotch, the indicators in the bar's right part): Update VM
+  (3.4.3, bar patch v43; #763, #764). With Skip the notch opening them left
+  of the notch, the left part of the bar (the workspaces) opened them too:
+  Update VM (3.4.3, #765). With Omanotch off, Omarchy's own bar opens them
+  only left of its centre; moving the indicators there (Omarchy's own layout,
+  `centerBegin`) avoids it.
+- **The notch strip's workspaces stay on 1 while you switch workspaces**
+  (Omarchy 4.5, Omanotch; OmacVM 3.4.2 and older): Update VM (3.4.3, bar
+  patch v43; #760). Then `omarchy-shell notchbar state` says
+  `"workspaces": "copy"` and `omacvm check` has no "NOTCH workspaces" line.
+  If the state says `"omarchy"`, or `omacvm check` has that line (the copy's
+  widget can load without its fix), the line has the fix (delete
+  `~/.config/omarchy/plugins/$USER.bar`, then repair Omanotch). If you made
+  your own copy of the workspaces widget and put it in the bar's layout,
+  put Omarchy's own Workspaces back in the layout: the fix is for Omarchy's
+  widget only (`"none"`: no Workspaces of Omarchy's on the strip's bar).
+- **The tray or other bar items show right of the notch, then move left of
+  it** (Omarchy 4.5, Omanotch with Skip the notch; on OmacVM 3.4.1 the shell
+  log may say `Binding loop detected for property "notchWidths"`): Update VM
+  (3.4.2, bar patch v41). Tray apps that start about a second apart (at
+  login) moved it once, at once, on Omarchy 4.0 and 4.5: Update VM (3.4.3,
+  bar patch v43; #757). The tray then shows once its apps stop coming (1.5 s
+  after the last, 8 s at most); an app that starts later can still move it
+  once.
+- **In Full screen including notch the windows start well below the notch**
+  (about 12 pt at the guest's scale 2 on OmacVM 3.4.1 and older: the bar
+  reserved the whole strip, then Omarchy's 10 px window gap): Update VM
+  (3.4.2, bar patch v41) makes it about 7 pt; the bar reserves the strip less
+  5 px of Omarchy's top window gap (all of the gap when it is under 5). A
+  smaller `general:gaps_out` in your Hyprland config moves windows closer
+  still. With a gap of 0, while Omarchy's drop-down console or 4.0's
+  scratchpad shows, and under a transparent bar on Omarchy 4.0 the bar
+  reserves the whole strip. Limit: the bar reads the gap at the shell's
+  start and after a config reload, so it does not see a gap changed only
+  with `hyprctl eval` or `hyprctl keyword` until the shell restarts or the
+  config reloads (which sets the configured gap again); until then a
+  smaller gap can put the top of a window under the strip. A gap of about
+  4 pt is Omarchy's own bar, or the moment before the app says full screen
+  (#758).
 - **Ghostty opens no window** (OpenGL 4.3 needed, the VM gives 4.1): Update
   VM (3.2.14), then log out and in; it then draws on the VM's CPU. Alacritty
   and Kitty draw on the Mac's GPU; from 3.2.18 the app's experimental switch
@@ -81,6 +145,14 @@ reviews, measuring pitfalls, how the VM apps work inside) are in
   OmacVM.app with **Keep the Dock and hot corners away** on (the default)
   hides it anyway; with that setting off, **Full screen including notch**
   starts as normal full screen. `omacvm check` points this out.
+- **The strip beside the notch stays black after you open the lid**
+  (OmacVM.app, **Full screen including notch**, the VM started with the lid
+  closed and only an external display on): leave full screen and enter it
+  again with the window on the MacBook's display. If the strip is still
+  black, start the VM again with the lid open. From 3.4.1 such a start uses
+  the notch the app saw last on this Mac and is meant to take the strip once
+  the lid is open (#716); that step is so far shown only by QEMU's own tests,
+  not yet with a real lid.
 - **A keyboard sharing app (Synergy, Deskflow, Barrier, Input Leap) loses
   the keyboard to the VM**: the VM types what was meant for the other
   computer. Turn on the hidden switch in
@@ -1521,7 +1593,12 @@ were about Parallels, UTM and VMware Fusion, retired in 3.4.0; they are in
   restarts OmacVM keeps `/run/omacvm/gl-zink-off` (one line "lost TIME
   WHY"): a start of Ghostty on Zink by OmacVM has to take the CPU while it
   exists. Other apps: restart them.
-  `omacvm check`'s "GPU contexts" names the app, marked "(Vulkan)". A
+  `omacvm check`'s "GPU contexts" names the app, marked "(Vulkan)". It, the
+  app's log and `logs/qemu.log` show the first 15 letters of the app's
+  process name, all the VM's kernel passes on (`cleanup-worker-` for
+  `cleanup-worker-vulkan`); from 3.4.5 the note in the VM shows the full
+  name when exactly one running app of yours fits, and the VM's journal
+  (`journalctl -t omacvm-desktop-recover`) shows both. A
   context the guest was closing anyway (the app was ending) is not counted:
   QEMU's log says `venus context N (<app>) ended while the guest closed it`.
   With the app update but no Update VM, the VM shows no note (the app's log
@@ -1653,7 +1730,9 @@ were about Parallels, UTM and VMware Fusion, retired in 3.4.0; they are in
 - **Stays on?** A player in the VM that hangs while it plays, in a window
   that can be seen, keeps asking Omarchy not to idle, so the Mac's display
   stays on until the window is hidden or minimised, the Mac locks or the VM
-  stops, as with a Mac player that hangs.
+  stops, as with a Mac player that hangs. A Firefox that hangs while it
+  plays does the same, and the VM's own lock waits meanwhile, as for
+  Chromium.
 - **Still dark?**
   - Chromium (Omarchy's browser and web apps, Chrome, Brave, Electron apps)
     counts only while it holds its display wake lock: Chromium takes it for
@@ -1676,8 +1755,28 @@ were about Parallels, UTM and VMware Fusion, retired in 3.4.0; they are in
     window and a video in another, the first window's display counts (not
     tested); and a video that starts while no Chromium window has the focus
     (an autoplay in the background) does not count until the next play.
-  - Firefox was not tested: it may tell D-Bus instead of Wayland, or not
-    reach either. mpv counts.
+  - Firefox (3.4.2, Update VM; ADR
+    [0072](adr/0072-firefox-wake-locks-and-guest-idle.md)) tells its wake
+    locks only to `org.freedesktop.ScreenSaver`, with a reason: "Playing
+    video" (a playing video with a sound track, also muted) and "Screen
+    lock" (a page's screen wake lock) count; music, autoscroll and
+    downloads do not, and a video without a sound track takes no lock at
+    all. Up to 3.4.1 the agent refused Firefox, and Firefox then never asks
+    again: **restart Firefox once after Update VM** (a Firefox that was
+    running during the update does not count until then). Firefox from
+    Flatpak or Snap is not recognised. A Firefox in another language sends
+    its reasons translated: the agent reads them from the language packs
+    installed with Firefox (Arch's `firefox-i18n-*`); with a language pack
+    you added in Firefox itself a video does not count, and the agent's log
+    names the reason once (`journalctl --user -u omacvm-displays`). mpv
+    counts.
+  - While a Firefox video counts, the VM's own screensaver and lock wait
+    too, as for Chromium and mpv (which ask Omarchy themselves): the agent
+    runs a small Quickshell of its own for it (`pgrep -af omacvm-awake`; a
+    1x1 invisible surface at the top left that takes no clicks). Its log
+    says when it holds and lets go; after 3 failed starts in a row it stops trying
+    until the agent restarts (then Omarchy's screensaver can cover the
+    video after 150 s and the Mac's display sleeps after it).
   - Hyprland window rules (Omarchy's full-screen rules, the `noidle` tag)
     and Omarchy's Stay Awake do not count: they would keep the Mac's display
     on for any full-screen window or for good.
@@ -1685,7 +1784,7 @@ were about Parallels, UTM and VMware Fusion, retired in 3.4.0; they are in
     count now. QEMU's log: `OmacVM: video awake: ...` (each hold and release
     with why).
 - **Where:** `app/runtime/patches/omacvm-cocoa-video-awake*.patch`,
-  `src/app/guest/omacvm-displays`; tests
+  `src/app/guest/omacvm-displays`, `src/app/guest/omacvm-awake.qml`; tests
   `app/runtime/Tests/display/test-video-awake.sh`,
   `src/app/guest/tests/test_omacvm_displays.py`.
 
@@ -1717,3 +1816,230 @@ were about Parallels, UTM and VMware Fusion, retired in 3.4.0; they are in
 - **Where:** `src/gestures/guest/install.sh`, `src/guest/check.sh`
   ("trackpad taps"); tests `src/gestures/guest/test-install-gestures.sh`,
   `src/tests/trackpad-taps.sh`.
+
+## 58. The display panel's scale does not stick on the main screen
+
+- **Symptom:** in "Full screen including notch", a scale button of
+  Omarchy's display panel (1.6, say) holds for a moment, then the screen
+  shows another scale (1.333); the next press gives yet another (2). After
+  one press (also in a window, or with Omarchy's scale keys or menu) the
+  screen no longer follows the VM window's size, and the journal says
+  `omacvm-display-sync: Virtual-1 has its own rule in
+  ~/.config/hypr/monitors.lua; not following the window`. Up to 3.4.1.
+- **Cause:** Omarchy's newer scaling command (`omarchy-hyprland-monitor-scaling`,
+  seen in omarchy 4.5.0-3) no longer saves the scale in
+  `local omarchy_monitor_scale`. It adds a rule for the screen after the
+  catch-all, or changes its scale:
+  `hl.monitor({ output = "Virtual-1", mode = "preferred", position = "auto", scale = 1.6 })`.
+  OmacVM ran that command for the button and then took the rule for one of
+  yours: display-sync stopped following the window, and the rule's
+  `preferred` mode put the old size back, where 1.6 does not fit, so
+  Hyprland picked another scale. omarchy 4.0.3rc4-2 and 4.0.5-1 still write
+  the local.
+- **Fix (3.4.2):** Update VM (`omacvm apply`). The panel no longer runs
+  Omarchy's command for Virtual-1: it writes the scale (Omarchy's clean value
+  for the screen's size) into `omarchy_monitor_scale` itself and runs
+  display-sync. A Virtual-1 rule written exactly in Omarchy's form (the line
+  above, any scale) counts as Omarchy's scale: display-sync,
+  `omacvm_app.lua` and the display agent read it, and the agent moves it into
+  `omarchy_monitor_scale` at every login. To keep such a rule as your own,
+  write it any other way, for example with a trailing `-- mine` comment.
+  Any other rule naming Virtual-1 stays yours: the screen follows it, not
+  the window, and the panel's buttons go through Omarchy's command as before.
+  A `monitors.lua` with no `omarchy_monitor_scale` line also gets Omarchy's
+  command (the journal says so).
+- **Before 3.4.2:** delete the Virtual-1 line above from
+  `~/.config/hypr/monitors.lua` and set the scale in
+  `local omarchy_monitor_scale = 1.6`.
+- **Where:** `src/app/guest/omacvm-displays` (`set_main_scale`,
+  `fold_scale_rule`, `wanted_scale`), `src/app/guest/omacvm-display-sync`
+  (`scale_for_mode`, `user_rule`), `src/app/guest/omacvm_app.lua`
+  (`user_rule`), `src/app/guest/monitor-widget/build.py`; tests
+  `src/app/guest/tests/test_omacvm_displays.py` (`Scale`),
+  `test_display_sync.py`, `omacvm_app_test.lua`, `test_monitor_widget.py`.
+
+## 59. The shell's log fills with `TypeError: Cannot read property 'foreground' of null`
+
+- **Symptom:** after Update VM, Omanotch's first-login install or an
+  Omarchy update, the shell's log has a few hundred lines like
+  `TypeError: Cannot read property 'foreground' of null` (also
+  `'fontFamily'` and `'urgent'`) from `omacvm.wifi/Panel.qml`,
+  `omacvm.bluetooth/Panel.qml`, `omacvm.audio/Panel.qml`,
+  `omacvm.nightshift/NightShift.qml` and, on Omarchy 4.0,
+  `omacvm.monitor/Panel.qml`. The bar works and looks right. The lines
+  come only when the shell reloads a plugin in place (a widget or the bar
+  copy written, or a plugin rescan), never at login or after
+  `omarchy-restart-shell`. 3.4.0 and 3.4.1.
+- **Where to look:** a shell started at login logs to the journal
+  (`journalctl -b`). A shell started by `omarchy-restart-shell`
+  logs only to its own file, `$XDG_RUNTIME_DIR/quickshell/by-id/*/log.qslog`
+  (read it with `quickshell log <file>`), not the journal.
+- **Cause:** the bar sets each widget's `bar` from outside. During an
+  in-place reload the old bar goes before its widgets, so `bar` is null for
+  a moment, and OmacVM's widgets read `bar.foreground`, `bar.fontFamily`
+  and `bar.urgent` with no check. The display panel (`omacvm.monitor`) is
+  built in the VM from Omarchy's own panel and had the same reads.
+- **Fix (3.4.2):** Update VM (`omacvm apply`). The widgets read the bar
+  through `barFg`, `barFont` and `barUrgent`, which use Omarchy's own bar
+  colour and font while `bar` is null. Nothing changes on screen.
+- **What stays (Omarchy's own, harmless, not OmacVM's):**
+  `bar/widgets/Indicators.qml:511` (`Cannot read property 'bar' of null`),
+  `Ui/BarIndicator.qml:21` (`Unable to assign [undefined] to bool`),
+  `Ui/WidgetButton.qml` (`Property 'hideTooltip' ... is not a function`),
+  `QQmlVMEMetaObject: Internal error - attempted to evaluate a function in
+  an invalid context`, and on Omarchy 4.0 the same `'foreground'` /
+  `'fontFamily'` lines from `panels/power/Panel.qml` and
+  `panels/weather/Panel.qml`. With Omanotch's Skip the notch, about 10
+  `Binding loop detected for property "notchWidths"` (or `"notchSkip"`)
+  lines from the bar copy when a Skip bar is torn down.
+- **Where:** `src/bridge/plugins/omacvm.wifi/Panel.qml`,
+  `omacvm.bluetooth/Panel.qml`, `omacvm.audio/Panel.qml`,
+  `omacvm.nightshift/NightShift.qml`;
+  `src/app/guest/monitor-widget/build.py` (`guard_bar`); test
+  `src/tests/plugin-bar-null.sh`.
+
+## 60. zram is as big as the VM's memory (Omarchy 4.5)
+
+- **Symptom:** on Omarchy 4.5 (a new VM, or one moved from 4.0), `zramctl`
+  shows zram as big as the VM's memory (3.8G in a 4 GB VM, 48G in a 48 GB
+  one), not OmacVM's cap of a quarter of the memory, at most 8 GiB. Up to
+  3.4.1; `omacvm check` said ok.
+- **Cause:** Omarchy 4.5 ships its own zram file,
+  `/usr/lib/systemd/zram-generator.conf.d/90-omarchy.conf` (`zram-size =
+  ram`). zram-generator reads the files in `zram-generator.conf.d` by name,
+  in all its folders together, and the last one wins. `90-omarchy.conf` came
+  after OmacVM's `/etc/.../90-omacvm.conf`. On 4.0 there is no such file, so
+  the cap held.
+- **Fix (3.4.2):** Update VM (`omacvm apply`), then restart the VM. OmacVM's
+  file is now `/etc/systemd/zram-generator.conf.d/95-omacvm.conf` and the old
+  name goes. The order is Omarchy's `90-` < OmacVM's `95-` < a file of your
+  own, `99-*.conf`. The size changes at the restart; until then `omacvm
+  check`'s "zram swap" line says so.
+- **Your own size:** put it in `/etc/systemd/zram-generator.conf.d/99-local.conf`
+  (as Omarchy suggests), for example `[zram0]` and `zram-size = ram / 2`, then
+  restart. OmacVM leaves that file alone, and the check line says ok and
+  names it. A file of yours named before `95-` loses to OmacVM's cap.
+- **Before 3.4.2:** the same `99-local.conf` with `zram-size = min(ram / 4, 8192)`.
+- **`omacvm check`:** "zram swap" warns over the cap (10 % slack) and says
+  what to do: Update VM and a restart when OmacVM's file is missing or old,
+  the next restart when it is in place, or the path of the file that is read
+  after OmacVM's (for example a later file of Omarchy's, which Update VM does
+  not change).
+- **Where:** `src/memory/guest/install.sh`, `src/memory/guest/90-omacvm-zram.conf`,
+  `src/guest/check.sh` (`zram_decider`, `zram_line`); test
+  `src/tests/memory-zram-order.sh`.
+
+## 61. x86 programs fail with "Could not open '/lib64/ld-linux-x86-64.so.2'" (Omarchy 4.5)
+
+- **Symptom:** x86 Linux apps is on. After a restart an x86_64 program or
+  AppImage does not start: `qemu-x86_64-static: Could not open
+  '/lib64/ld-linux-x86-64.so.2': No such file or directory`. A VM built with
+  Omarchy 4.5 (a moved 4.0 VM does not have qemu-user). `omacvm check` said
+  ok up to 3.4.1. Right after switching x86 apps on it worked.
+- **Cause:** Omarchy 4.5 has qemu-user (`qemu-user-static-binfmt`). Its
+  binfmt rule for x86_64 is loaded after box64's at every boot (file-name
+  order), and the kernel tries the newest rule first, so qemu-user gets
+  x86_64 programs. It has no x86_64 libraries, so every program that needs
+  glibc fails.
+- **Fix (3.4.2):** Update VM (`omacvm apply`); no restart, no box64 build.
+  While x86 apps is on, OmacVM holds qemu-user's x86_64 rule back with
+  `/etc/binfmt.d/qemu-x86_64-static.conf` (a file of OmacVM's, comments
+  only); its other architectures stay. Switching x86 apps off removes it.
+  `omacvm check`'s "x86 apps" row names any other rule that gets x86_64
+  programs first; one that is not qemu-user's (FEX, or a file of that name
+  of your own) is left alone: remove it to use box64.
+- **Before 3.4.2:** `box64 ./program` runs it through box64 directly.
+- **Also 3.4.2:** switching x86 apps off failed and rolled back (exit 4,
+  "target not found: box64", #751), on 4.0 and 4.5. Update VM, then switch
+  it off again.
+- **Where:** `src/x86/guest/install.sh`, `src/guest/check.sh` ("x86 apps");
+  test `src/tests/x86-apps.sh`; [ADR 0040](adr/0040-x86-apps-box64.md).
+
+## 62. "OMARCHY_PATH does not match this Omarchy command." (Omarchy 4.5)
+
+- **Symptom:** the move to Omarchy 4.5 stops at its last step, "update" (12
+  of 13), and Resume stops there again. Its log
+  (`/var/log/omacvm-system-update.log` in the VM) shows `omarchy update`
+  stopping right after "Create system snapshot" with that line, then
+  "Something went wrong during the update!". Up to 3.4.2 the move said only
+  "omarchy update did not finish" (#742). The same can happen to an
+  `omarchy update` you start in a terminal on Omarchy 4.5.
+- **Cause:** Omarchy 4.5 refuses to run its update steps when the variable
+  `OMARCHY_PATH` names another Omarchy than the command's own
+  (`/usr/share/omarchy` for Omarchy's package). `omarchy update` runs itself
+  again through `script`, which starts your login shell, so a line in its
+  startup files that sets `OMARCHY_PATH` (for example to Omarchy 4.0's
+  `~/.local/share/omarchy`) wins: zsh reads `~/.zshenv` there, fish
+  `~/.config/fish/config.fish` and `conf.d/`. In a terminal, bash's
+  `~/.bashrc` or `~/.profile` set it as well. Omarchy 4.0 had no such check.
+- **Fix (3.4.3):** OmacVM runs `omarchy update` under bash, which reads no
+  startup file there, so the move, Graphics › Vulkan and a prebuilt VM's
+  first update no longer depend on your shell. Update OmacVM.app, then
+  Resume the move: it brings the new OmacVM into the VM first. The move's
+  card now quotes Omarchy's own line when its update stops.
+- **For your own `omarchy update`:** find the line with
+  `grep -rns OMARCHY_PATH ~/.zshenv ~/.zprofile ~/.zshrc ~/.config/fish ~/.profile ~/.bash_profile ~/.bashrc`,
+  remove it, open a new terminal and run `omarchy update`. Omarchy 4.5's
+  desktop session sets `OMARCHY_PATH=/usr/share/omarchy` itself, also on a
+  kept VM whose migrations have not run; `echo $OMARCHY_PATH` in the new
+  terminal shows it. A VM kept with Keep This Disk… after such a stop (3.4.1,
+  3.4.2) needs this once: Omarchy's migrations did not run in the move, and
+  Update VM does not run `omarchy update`.
+- **Before 3.4.3:** Undo… in the VM's settings puts the Omarchy 4.0 disk back
+  as it was before the move. Or Keep This Disk… and the step above.
+- **Where:** `src/guest/system-update` (`run_unit`, `-E SHELL`),
+  `src/guest/omarchy-move.sh` (`update_why`); tests `src/tests/pkg-safe.sh`,
+  `src/tests/omarchy-move.sh`.
+
+## 63. Mission Control: windows stay hidden, or the overview stays on the screen
+
+- **Symptom:** with Mission Control on, the windows are gone after the
+  overview, or the overview stays on the screen and does not answer.
+  `omacvm check` fails on its "Mission Control" line ("windows left hidden",
+  or "the Omarchy shell does not answer").
+- **Cause:** while the overview is open the plugin hides the real windows
+  and shows live copies. The windows come back when the overview closes or
+  when the Omarchy shell goes away; a shell that hangs (does not answer, but
+  still runs) keeps the overview on the screen and the windows hidden.
+- **Fix:** switch **Mission Control** off in the app's VM window (Input), or
+  on the Mac `omacvm apply --reinstall mission-control --vm NAME`. Both show the
+  windows again (the plugin's own reset) and restart a shell that does not
+  answer; while Hyprland holds a session lock they say to unlock first. In
+  the VM, `hyprctl eval 'mac_mission_control.reset()'` shows the windows.
+- **Where:** `src/missioncontrol/guest/install.sh` (`--repair`, `off`,
+  `--status`); tests `src/missioncontrol/tests/run.sh`.
+
+## 64. The VM's disk is slower on Omarchy 4.5 (I/O scheduler)
+
+- **Symptom:** on Omarchy 4.5 (a new VM, or one moved from 4.0), 4k random
+  writes on the VM's disk run at about half the speed of a 4.0 VM (`fio` at
+  queue depth 32: about 90k per second against 174k to 182k on a Mac mini
+  M4), 4k random reads at 0.53 to 0.73x at queue depth 32 and about 0.88x
+  at queue depth 1. `cat /sys/block/nvme0n1/queue/scheduler` shows
+  `[kyber]`. Up to 3.4.4.
+- **Cause:** Omarchy 4.5 ships `/etc/udev/rules.d/60-omarchy-io-scheduler.rules`,
+  which sets the kyber scheduler on every disk when it appears and on every
+  change event. A scheduler in the VM only adds work: the Mac schedules the
+  real I/O of the VM's disk file. 4.0 has no such rule and boots with none.
+  Setting `none` by hand does not hold for a test on the whole disk:
+  udev sends a change event each time a program closes the disk after
+  opening it for writing (fio does at the start of each write job), and
+  Omarchy's rule sets kyber again (#778).
+- **Fix (3.4.5):** Update VM (`omacvm apply`); no restart. OmacVM's own
+  rule, `/etc/udev/rules.d/61-omacvm-io-scheduler.rules`, is read after
+  Omarchy's and sets none on the VM's own disks (QEMU's NVMe and virtio
+  disks) on the same events. A USB disk passed in keeps Omarchy's choice.
+  The rule acts only while `/etc/omacvm/env` (OmacVM's record in the VM) is
+  there.
+- **Your own choice:** a rule of your own that sorts after OmacVM's, for
+  example `/etc/udev/rules.d/99-local-scheduler.rules`; `omacvm check` then
+  warns and names it. What kyber gives: while a program floods the disk
+  with 4k random writes, a reader's slowest 1 % of reads take about 0.11 ms
+  instead of 0.18 ms, at half the writer's speed (MacBook Air M2); without
+  such a flood, reads are as fast or faster with none.
+- **`omacvm check`:** "disk scheduler" says ok with none on the VM's disk,
+  and warns when OmacVM's rule is missing (Update VM) or a later rule sets
+  another scheduler.
+- **Where:** `src/disk/guest/install.sh`,
+  `src/disk/guest/61-omacvm-io-scheduler.rules`, `src/guest/check.sh` ("disk
+  scheduler"); test `src/tests/disk-scheduler.sh`.

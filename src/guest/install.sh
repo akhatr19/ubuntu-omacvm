@@ -8,7 +8,8 @@
 #                    [--graphics opengl|vulkan] [--kernel-new build|keep]
 # Features: the list in ../features.tsv (bridge, wallpaper, gestures, scroll-momentum,
 # omanotch, mac-clock, camera, no-idle-lock, autologin, thp-kernel, battery, external-brightness,
-# control-centre, fast-network, chromium-video, gpu-compute, vulkan, x86-apps, touch-id, mac-ime, drag-drop) with its defaults; a feature
+# control-centre, fast-network, chromium-video, gpu-compute, vulkan, x86-apps, touch-id, mac-ime, drag-drop,
+# mission-control) with its defaults; a feature
 # needing another one is off without it. Choices are kept in /etc/omacvm/env,
 # so a later run without --feature keeps them.
 # --vm-type: app (OmacVM.app), the only one; anything else stops (exit 2):
@@ -125,6 +126,18 @@ in_session() {
 }
 # Updated bar widgets load in a new shell: restarted once at the end.
 restart_shell_later() { home_mkdir "$H/.local/state/omacvm"; home_put "$H/.local/state/omacvm/restart-shell" < /dev/null; }
+# The running Omarchy shell (quickshell -p <OMARCHY_PATH>/shell) finds the
+# Bridge's night light toggle in OmacVM's folder (omacvm_vm.lua's
+# OMARCHY_OVERRIDES, ahead of Omarchy's bin) on its own PATH. No shell: true
+# (the next one starts with Hyprland's PATH).
+shell_runs_overrides() {
+  local p pa w
+  p=$(pgrep -u "$U" -f '(^|/)(quickshell|qs) (.* )?-p [^ ]+/shell( |$)' | head -n 1)
+  [[ -n $p ]] || return 0
+  pa=$(tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | sed -n 's/^PATH=//p')
+  w=$(PATH=$pa; command -v omarchy-toggle-nightlight 2>/dev/null)
+  [[ $w == "$OMARCHY_OVERRIDES/omarchy-toggle-nightlight" ]]
+}
 # A script of OmacVM's as the desktop user (its user units, Omarchy's shell).
 user_script() { sudo -u "$U" env XDG_RUNTIME_DIR="/run/user/$(id -u "$U")" bash "$@"; }
 # The desktop session: down, busy, locked or open (guest/session-lock.sh).
@@ -411,11 +424,15 @@ fi
 # Hyprland settings every route needs (omacvm_vm.lua, each says why): Hyprland
 # 0.57's quirks:skip_non_kms_dmabuf_formats off, else virtio-gpu leaves apps no
 # format with alpha and the shell's panels and notifications black out the
-# screen (#630). Hyprland reads it at its start.
+# screen (#630). Hyprland reads it at its start. And OmacVM's folder ahead of
+# Omarchy's bin on the session's PATH (#748): Hyprland's reload of the file
+# gives it to the keys at once, the shell gets it below.
+hypr_vm=""
 if system; then
   r=$("$R/guest/hypr-vm.sh" "$U" 2>&1) || r="failed: $r"
+  hypr_vm=$r
   case $r in
-    added|updated) log "Hyprland: OmacVM's settings for every VM $r (on Hyprland 0.57: transparent panels and notifications from the next login)" ;;
+    added|updated) log "Hyprland: OmacVM's settings for every VM $r (the Bridge's night light toggle ahead of Omarchy's now; on Hyprland 0.57: transparent panels and notifications from the next login)" ;;
     "") ;;
     *) log "Hyprland: OmacVM's settings for every VM: $r" ;;
   esac
@@ -480,6 +497,20 @@ if want drag-drop; then
     "$R/drop/guest/install.sh" "$U" off || not_set_up drag-drop "drag and drop (off)"
   fi
 fi
+# Mission Control (Omarchy 4.5): the Mac Mission Control plugin, OmacVM's
+# pinned copy (missioncontrol/PIN). Off on every apply undoes only what
+# OmacVM switched on; a copy of the owner's own is never written.
+if want mission-control; then
+  if [[ ${F[mission-control]} == on ]]; then
+    log "Mission Control (the Mac Mission Control plugin)"
+    "$R/missioncontrol/guest/install.sh" "$U" on || not_set_up mission-control "Mission Control"
+    # A repair (omacvm apply --reinstall mission-control, --only here): windows it left hidden shown again,
+    # a shell that hangs with the overview on screen restarted.
+    [[ -z $ONLY ]] || "$R/missioncontrol/guest/install.sh" "$U" --repair || not_set_up mission-control "Mission Control (repair)"
+  else
+    "$R/missioncontrol/guest/install.sh" "$U" off || not_set_up mission-control "Mission Control (off)"
+  fi
+fi
 if ! want battery; then
   :
 elif [[ ${F[battery]} == on ]]; then
@@ -491,6 +522,7 @@ else
 fi
 if system; then
   log "memory";     "$R/memory/guest/install.sh"
+  log "disk";       "$R/disk/guest/install.sh"
   log "keyboard";   "$R/keyboard/guest/install.sh" "$U" "$layout" "${variant:-}"
 fi
 # Off means off on every route (off.sh): no service of the feature runs in the
@@ -510,12 +542,27 @@ elif [[ -f $H/.config/hypr/omacvm_glide.lua ]]; then
   log "scroll momentum: off"; "$R/gestures/guest/glide.sh" "$U" off
 fi
 if system; then log "workspaces"; "$R/workspaces/guest/install.sh" "$U"; fi
+# Whether the Bridge's night light link was there before this run (the gate below).
+nl_link_had=no; [[ -e $OMARCHY_OVERRIDES/omarchy-toggle-nightlight ]] && nl_link_had=yes
 if ! want bridge; then
   :
 elif [[ ${F[bridge]} == on ]]; then
   log "bridge";     "$R/bridge/guest/install.sh" "$U"
 else
   bridge_off   # Omarchy's own Bluetooth, Wi-Fi and audio widgets come back
+fi
+# The menu's Nightlight runs in the Omarchy shell, with the PATH the shell
+# started with (#748). A shell from before omacvm_vm.lua put OmacVM's folder
+# first still finds Omarchy's toggle (hyprsunset): restarted once at the end
+# (through Hyprland, so it gets Hyprland's new PATH), only when this run wrote
+# omacvm_vm.lua or made the Bridge's link (the Bridge switched on after an
+# update made with it off). A Hyprland that did not reload it keeps the old
+# PATH: no restart on every apply then (omacvm check says to log out and in).
+nl_link_made=no
+[[ $nl_link_had == no && -e $OMARCHY_OVERRIDES/omarchy-toggle-nightlight ]] && nl_link_made=yes
+if [[ ${F[bridge]} == on && ( $hypr_vm == added || $hypr_vm == updated || $nl_link_made == yes ) ]] && ! shell_runs_overrides; then
+  log "bridge: the Omarchy shell restarts once, for the Mac's night light in its menu"
+  restart_shell_later
 fi
 # External display brightness: Omarchy's own DDC/CI path (ddcutil) goes through
 # the Bridge to the external Mac display an output is on. Only our ddcutil is

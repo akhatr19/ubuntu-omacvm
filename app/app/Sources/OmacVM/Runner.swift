@@ -458,6 +458,8 @@ final class Runner {
         let gpuComputePending = GPUCompute.switchState.prepareStart(folder: c.folder)
         // Drag and drop switched in the window while it was stopped: the same way.
         let dropPending = DragDrop.switchState.prepareStart(folder: c.folder)
+        // Mission Control switched in the window while it was stopped: the same way.
+        let missionControlPending = MissionControl.switchState.prepareStart(folder: c.folder)
         // What of the Mac this start may use (its features), read once.
         links = MacLinks.load(folder: c.folder)
         // The strip beside the notch (NotchArea, #339): FullPanel only with the
@@ -537,6 +539,8 @@ final class Runner {
         if !Settings.globeKeyToVM { env["OMACVM_GLOBE_KEY"] = "mac" }
         // Keyboard sharing apps see the keys before QEMU's tap (#350, omacvm-cocoa-keys-last.patch).
         ShareKeyboard.apply(Settings.shareKeyboard, to: &env)
+        // Apple ISO keyboards: the keys left of 1 and left of Z where Linux has them (#784).
+        ISOKeyboard.apply(ISOKeyboard.isISO, to: &env)
         // Closing the window (#358, org.omacvm.app closeAction; omacvm-cocoa-close.patch).
         env["OMACVM_CLOSE_ACTION"] = UserDefaults.standard.string(forKey: "closeAction") ?? "shutdown"
         // Video decoding on the Mac's media engine (H.264, VP9, HEVC). AV1 only for
@@ -557,7 +561,9 @@ final class Runner {
         }
         // "Features…" in QEMU's app menu asks this app to open the control
         // centre in the VM (ControlCentreRoute).
-        let route = ControlCentreRoute(agentPath: c.agentSocket.path, vmName: c.name) { [weak self] line in
+        let route = ControlCentreRoute(agentPath: c.agentSocket.path, vmName: c.name, takeKeys: { [weak self] window in
+            AskKeys.take(window, overVM: self?.process?.processIdentifier)
+        }) { [weak self] line in
             self?.appendLog(line)
         }
         env["OMACVM_FEATURES_REQUEST"] = route.requestName
@@ -855,6 +861,12 @@ final class Runner {
             }
             if let on = dropPending {
                 FeatureStart.run(config: c, switch: DragDrop.switchState, what: "Drag and drop", on: on, agentPath: agentPath,
+                                 until: agentDeadline, running: { kill(pid, 0) == 0 }) { [weak self] line in
+                    Task { @MainActor in self?.appendLog(line) }
+                }
+            }
+            if let on = missionControlPending {
+                FeatureStart.run(config: c, switch: MissionControl.switchState, what: "Mission Control", on: on, agentPath: agentPath,
                                  until: agentDeadline, running: { kill(pid, 0) == 0 }) { [weak self] line in
                     Task { @MainActor in self?.appendLog(line) }
                 }
@@ -1449,6 +1461,7 @@ final class Runner {
         alert.informativeText = "It is paused. Resume it, or shut it down."
         alert.addButton(withTitle: "Resume")
         alert.addButton(withTitle: "Shut Down")
+        AskKeys.take(alert.window, overVM: process?.processIdentifier)
         let shutDown = alert.runModal() == .alertSecondButtonReturn
         resumeIfPaused()
         if shutDown { powerDown() } else { syncClock() }

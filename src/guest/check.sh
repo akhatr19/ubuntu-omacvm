@@ -46,6 +46,37 @@ queued_when() {
   if user_active omacvm-restart-shell.service; then echo "right after the next unlock"; else echo "log out and in"; fi
 }
 connected_to() { ss -Htn state established "dst $1:$2" | grep -q .; }
+# "Night Shift toggle" (#748): what the menu's Nightlight and a night light key
+# run. Omarchy puts its own bin first on the session's PATH; omacvm_vm.lua puts
+# OmacVM's folder (the Bridge's toggle) ahead of it. Read from the PATH of the
+# running Omarchy shell (the menu runs there; "-": no shell) and Hyprland's
+# binds (Omarchy 4.0 has Super+Ctrl+N "Toggle nightlight"; 4.5 none, that key
+# is its Network panel).
+OMARCHY_OVERRIDES=/usr/local/lib/omacvm/omarchy-overrides
+nightlight_line() {   # SHELL_PATH BINDS_JSON
+  local w key
+  if [[ ! -x $OMARCHY_OVERRIDES/omarchy-toggle-nightlight ]]; then
+    bad "Night Shift toggle" "OmacVM's night light toggle is not installed: omacvm apply"; return
+  fi
+  if [[ $1 == - ]]; then skip "Night Shift toggle" "no Omarchy shell running"; return; fi
+  w=$(PATH=$1; command -v omarchy-toggle-nightlight 2>/dev/null)
+  if [[ $w != "$OMARCHY_OVERRIDES/omarchy-toggle-nightlight" ]]; then
+    if [[ $(queued_when) == "log out and in" ]]; then
+      warn "Night Shift toggle" "the shell runs Omarchy's own night light (hyprsunset), not the Mac's Night Shift: log out and in" human
+    else
+      warn "Night Shift toggle" "the shell runs Omarchy's own night light (hyprsunset) until it restarts, right after the next unlock"
+    fi
+    return
+  fi
+  # The first bind whose description or command names the night light, as Super+Ctrl+N.
+  key=$(jq -r 'def has(b): ((.modmask // 0) / b | floor) % 2 == 1;
+    [.[]? | select(((.description // "") + " " + (.arg // "") | test("night ?light"; "i")))
+     | [(if has(64) then "Super" else empty end), (if has(4) then "Ctrl" else empty end),
+        (if has(8) then "Alt" else empty end), (if has(1) then "Shift" else empty end), .key] | join("+")]
+    | first // empty' <<<"$2" 2>/dev/null)
+  if [[ -n $key ]]; then ok "Night Shift toggle" "the menu's Nightlight and $key drive the Mac"
+  else ok "Night Shift toggle" "the menu's Nightlight and the bar's Night Shift drive the Mac (no key for it)"; fi
+}
 ev_device() { grep -q "^N: Name=\"$1\"" /proc/bus/input/devices; }
 # missing_pkgs PKG...: why a feature is not set up when pacman could not
 # install what it needs ("" when all are there). On a VM whose package list
@@ -101,6 +132,17 @@ notch_spot() {
       elif $t == "app" and $gap > -1 and $gap < 1 then "above"
       else empty end' <<<"$1" 2>/dev/null | head -1
 }
+# Omarchy 4.5 (#760): the strip's workspaces widget in the bar copy ($2) has
+# the patch, but the bar fell back to Omarchy's (`notchbar state` $1 says
+# "workspaces": "omarchy"), so it does not load. Each line of the state on its
+# own: Qt's locale warning can come first. Gone or unpatched is copies.py's line.
+notch_ws_unloaded() {
+  [[ $(jq -rR 'fromjson? | .workspaces // empty' <<<"$1" 2>/dev/null) == omarchy ]] && grep -qs omarchy-notch-bar "$2"
+}
+# The JSON object an `omarchy-shell` answer (stdin) holds, on one line; nothing
+# when it has none. Each line on its own: without a UTF-8 locale (omacvm check
+# over ssh) Qt's locale warning comes first, and plain jq stops at it (#769).
+shell_json() { jq -cR 'fromjson? | objects' 2>/dev/null | tail -n 1; }
 FAST_NET=${OMACVM_FEATURE_fast_network:-off}
 # Features chosen at setup (VMs set up before the choices existed: the defaults
 # they were built with).
@@ -417,7 +459,9 @@ if [[ $BRIDGE == on ]]; then
   done
   if jq -e '.plugins[]? | select(.id == "omacvm.wifiqr")' "$H/.config/omarchy/shell.json" >/dev/null 2>&1; then ok "Wi-Fi QR card" "omacvm.wifiqr"
   else bad "Wi-Fi QR card" "omacvm.wifiqr not enabled"; fi
-  check "Night Shift toggle" "Super+Ctrl+N drives the Mac" test -x /usr/local/bin/omarchy-toggle-nightlight
+  qs=$(pgrep -u "$U" -f '(^|/)(quickshell|qs) (.* )?-p [^ ]+/shell( |$)' | head -n 1)
+  qpath=-; [[ -n $qs ]] && qpath=$(tr '\0' '\n' < "/proc/$qs/environ" 2>/dev/null | sed -n 's/^PATH=//p')
+  nightlight_line "$qpath" "$(as_user hyprctl -j binds 2>/dev/null)"
   if jq -e '[.bar.layout[]?[]? | select(.id == "omarchy.indicators") | (.items // ["NightLight"]) | index("NightLight")] | all(. == null)' "$H/.config/omarchy/shell.json" >/dev/null 2>&1 && ! pgrep -x hyprsunset >/dev/null; then
     ok "one night light" "the Mac's Night Shift; Omarchy's own is off"
   else bad "one night light" "Omarchy's night light (hyprsunset) is still reachable or running: omacvm apply"; fi
@@ -532,6 +576,21 @@ if [[ $GLIDE == on && $GESTURES == on ]]; then
     ok "scroll settings" "omacvm_glide.lua"
   else bad "scroll settings" "omacvm_glide.lua missing or not loaded from hyprland.lua (omacvm enable scroll-momentum)"; fi
 else skip "scroll momentum" "off (omacvm enable scroll-momentum turns it on: trackpads only)"; fi
+# Mission Control (mission-control, the Mac Mission Control plugin): in place,
+# enabled, its Hyprland half loaded; fails when windows stay hidden or the
+# overview stays on screen while the overview is closed or its shell does
+# not answer (the repair: omacvm apply --reinstall mission-control).
+FEATURE=mission-control
+mc=$(/usr/local/share/omacvm/missioncontrol/guest/install.sh "$U" --status "${OMACVM_FEATURE_mission_control:-off}" 2>/dev/null | tail -n 1)
+case ${mc%% *} in
+  ok) ok "Mission Control" "${mc#* }" ;;
+  warn) warn "Mission Control" "${mc#* }" ;;
+  fail) bad "Mission Control" "${mc#* }" ;;
+  human) skip "Mission Control" "${mc#* }" human ;;
+  skip) skip "Mission Control" "${mc#* }" ;;
+  *) [[ ${OMACVM_FEATURE_mission_control:-off} == on ]] && bad "Mission Control" "its check did not answer: omacvm apply" ||
+       skip "Mission Control" "off (omacvm enable mission-control)" ;;
+esac
 FEATURE=""
 if [[ $GESTURES == on ]]; then
   check "Cmd as Super" "OmacVM keyboard (Mac shortcuts)" ev_device "OmacVM keyboard (Mac shortcuts)"
@@ -627,6 +686,93 @@ hdr_capture_line() {
     other|missing|uncovered) printf '%s\t%s\n' "$bad" "$t" ;;
     *) printf '%s\t%s\n' "$bad" "OmacVM's fix for screenshots and screen sharing of HDR apps (Chrome) is not in this VM: Update VM" ;;
   esac
+}
+# zram_decider ROOT: the file whose [zram0] zram-size zram-generator takes (zram-generator.conf(5),
+# 1.2.1): drop-ins by file name (bytes) across usr/lib, usr/local/lib, etc and run, the same
+# name in a later of those folders hiding the earlier one, a link to /dev/null masking it; the
+# last one that sets it wins; with none, the main file (the first of run, etc, usr/local/lib,
+# usr/lib). Prints the path (without ROOT), or nothing (zram-generator's default).
+zram_decider() {
+  local r=${1%/} d f n p last=""
+  local get='/^[[:space:]]*\[/ { s = $0; gsub(/[[:space:]]/, "", s); z = (s == "[zram0]"); next }
+    z && /^[[:space:]]*zram-size[[:space:]]*=/ { f = 1 } END { exit !f }'
+  while IFS= read -r n; do
+    p=""
+    for d in run etc usr/local/lib usr/lib; do
+      f=$r/$d/systemd/zram-generator.conf.d/$n
+      if [[ -e $f || -L $f ]]; then p=$f; break; fi
+    done
+    [[ -L $p && $(readlink "$p") == /dev/null ]] && continue
+    awk "$get" "$p" 2>/dev/null && last=${p#"$r"}
+  done < <(for d in usr/lib usr/local/lib etc run; do
+             for f in "$r/$d/systemd/zram-generator.conf.d"/*.conf; do
+               if [[ -e $f || -L $f ]]; then echo "${f##*/}"; fi
+             done
+           done | LC_ALL=C sort -u)
+  if [[ -z $last ]]; then
+    for d in run etc usr/local/lib usr/lib; do
+      f=$r/$d/systemd/zram-generator.conf
+      [[ -e $f ]] || continue
+      awk "$get" "$f" 2>/dev/null && last=${f#"$r"}
+      break
+    done
+  fi
+  echo "$last"
+}
+# disk_sched_line ROOT DISK: the "disk scheduler" line, "status<TAB>detail". The VM's disk (DISK,
+# e.g. nvme0n1) should have none: the Mac schedules the real I/O (#778). Omarchy 4.5's
+# 60-omarchy-io-scheduler.rules sets kyber on every disk; OmacVM's 61-omacvm-io-scheduler.rules
+# (src/disk/guest) sets none again on QEMU's disks. Another scheduler: OmacVM's rule is missing
+# (Update VM), or a rule read after it sets one: its path, and the package it comes with (pacman
+# -Qqo; then OmacVM's rule has to sort later) or "yours" (the user's own choice). udev reads
+# /etc, /run and /usr/lib/udev/rules.d by file name; a name in /etc hides the same name in /run
+# and /usr/lib, and /run hides /usr/lib.
+disk_sched_line() {
+  local root=${1%/} d=$2 s f n p seen=" " later=""
+  [[ -n $d && -r $root/sys/block/$d/queue/scheduler ]] || { printf 'skip\t%s\n' "the VM's disk was not found"; return 0; }
+  s=$(sed -n 's/.*\[\(.*\)\].*/\1/p' "$root/sys/block/$d/queue/scheduler")
+  if [[ $s == none ]]; then printf 'ok\t%s\n' "none on $d: the Mac schedules the VM's disk I/O"; return 0; fi
+  if [[ ! -s $root/etc/udev/rules.d/61-omacvm-io-scheduler.rules ]]; then
+    printf 'warn\t%s\n' "$s on $d: OmacVM's rule is missing (Update VM / omacvm apply puts it back)"; return 0
+  fi
+  for f in "$root"/etc/udev/rules.d/*.rules "$root"/run/udev/rules.d/*.rules "$root"/usr/lib/udev/rules.d/*.rules; do
+    n=${f##*/}
+    [[ -f $f && $seen != *" $n "* ]] || continue
+    seen+="$n "
+    [[ $n > 61-omacvm-io-scheduler.rules ]] && grep -qs 'queue/scheduler' "$f" || continue
+    p=$(pacman -Qqo "${f#"$root"}" 2>/dev/null | head -1)
+    if [[ -n $p ]]; then later+=" ${f#"$root"} (package $p: OmacVM's rule has to come after it, Update VM once OmacVM has that)"
+    else later+=" ${f#"$root"} (yours: your choice)"; fi
+  done
+  if [[ -n $later ]]; then printf 'warn\t%s\n' "$s on $d, set by a rule read after OmacVM's:$later"
+  else printf 'warn\t%s\n' "$s on $d, not none: restart the VM, or run omacvm apply"; fi
+}
+# zram_line SIZE_BYTES MEMTOTAL_KB DECIDER OURS: the "zram swap" line, "status<TAB>detail".
+# OmacVM's cap is memory/guest/90-omacvm-zram.conf's min(ram / 4, 8192) MiB; up to 10 % over is
+# fine (MemTotal moves a little with the kernel). Over it, the line says who decides (DECIDER,
+# zram_decider's path) and what changes it (OURS = 1: OmacVM's 95-omacvm.conf is in place):
+# Update VM only when that is what is missing; a file of the user's own in /etc is their choice.
+zram_line() {
+  local b=$1 kb=$2 who=$3 ours=$4 cap size capt w
+  if [[ -z $b || $b == 0 ]]; then printf 'fail\t%s\n' "none (reboot after omacvm apply?)"; return 0; fi
+  cap=$(( kb * 1024 / 4 )); (( cap > 8192 * 1048576 )) && cap=$(( 8192 * 1048576 ))
+  size=$(awk -v b="$b" 'BEGIN { m = b / 1048576; s = m >= 1024 ? sprintf("%.1fG", m / 1024) : sprintf("%.1fM", m); sub(/\.0/, "", s); print s }')
+  capt=$(awk -v b="$cap" 'BEGIN { m = b / 1048576; s = m >= 1024 ? sprintf("%.1fG", m / 1024) : sprintf("%.1fM", m); sub(/\.0/, "", s); print s }')
+  case $who in
+    /etc/systemd/zram-generator.conf.d/90-omacvm.conf|/etc/systemd/zram-generator.conf.d/95-omacvm.conf) ;;
+    /etc/systemd/zram-generator.conf.d/*)
+      printf 'ok\t%s\n' "$size, set by $who (yours; OmacVM's cap is $capt)"; return 0 ;;
+  esac
+  w=$who; [[ -n $w ]] || w="zram-generator's default"
+  if (( b * 10 <= cap * 11 )); then
+    printf 'ok\t%s\n' "$size (OmacVM's cap: a quarter of the memory, at most 8 GiB)"
+  elif [[ $ours != 1 ]]; then
+    printf 'warn\t%s\n' "$size, over OmacVM's cap of $capt (set by $w): Update VM (omacvm apply), then restart the VM"
+  elif [[ $who == /etc/systemd/zram-generator.conf.d/95-omacvm.conf ]]; then
+    printf 'warn\t%s\n' "$size, over OmacVM's cap of $capt: the cap applies at the VM's next restart"
+  else
+    printf 'warn\t%s\n' "$size, over OmacVM's cap of $capt: $w is read after OmacVM's file and sets it"
+  fi
 }
 # ghostty_line INSTALLED JSON LIBRARY [MARKER ZINKOFF RECORD]: the "Ghostty" line,
 # "status<TAB>detail" (nothing when Ghostty is not installed). Ghostty 1.2 and newer need OpenGL
@@ -1052,8 +1198,27 @@ if [[ $TYPE == app ]]; then
   elif [[ $o == -1 ]]; then warn "free page reporting" "the balloon has not started free page reporting yet (Update VM / omacvm apply sets 256 KiB)"
   else warn "free page reporting" "freed memory leaves QEMU's footprint in blocks of order $o, not 256 KiB (Update VM / omacvm apply sets it)"; fi
 fi
-z=$(swapon --show=NAME,SIZE --noheadings 2>/dev/null | awk '/zram/ { print $2; exit }')
-[[ -n $z ]] && ok "zram swap" "$z" || bad "zram swap" "none (reboot after omacvm apply?)"
+# zram: OmacVM's cap, or who sets more (#746: Omarchy 4.5's own file was read after OmacVM's).
+zd="" zb=""
+read -r zd zb < <(swapon --show=NAME,SIZE --bytes --noheadings 2>/dev/null | awk '/zram/ { print $1, $2; exit }')
+[[ -n $zd && -r /sys/block/${zd##*/}/disksize ]] && zb=$(cat "/sys/block/${zd##*/}/disksize")
+zo=0; [[ -s /etc/systemd/zram-generator.conf.d/95-omacvm.conf ]] && zo=1
+r=$(zram_line "$zb" "$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo)" "$(zram_decider /)" "$zo")
+case ${r%%$'\t'*} in
+  ok) ok "zram swap" "${r#*$'\t'}" ;;
+  warn) warn "zram swap" "${r#*$'\t'}" ;;
+  *) bad "zram swap" "${r#*$'\t'}" ;;
+esac
+# The VM's disk without an I/O scheduler (#778: Omarchy 4.5's rule sets kyber on every disk).
+# The root file system's disk: up from its device (a partition, also under device-mapper) to the
+# entry of type disk.
+dk=$(lsblk -nrso NAME,TYPE "$(findmnt -no SOURCE / 2>/dev/null | sed 's/\[.*//')" 2>/dev/null | awk '$2 == "disk" { print $1; exit }')
+r=$(disk_sched_line / "$dk")
+case ${r%%$'\t'*} in
+  ok) ok "disk scheduler" "${r#*$'\t'}" ;;
+  warn) warn "disk scheduler" "${r#*$'\t'}" ;;
+  *) skip "disk scheduler" "${r#*$'\t'}" ;;
+esac
 if command -v grub-mkconfig >/dev/null; then
   if ! command -v snapper >/dev/null; then bad "bootable snapshots" "snapper is not installed (pacman -S snapper)"
   elif ! systemctl is-active -q grub-btrfsd; then bad "bootable snapshots" "grub-btrfsd is not running"
@@ -1069,6 +1234,16 @@ n=$(sed -n 's/^NUMBER_LIMIT="\([0-9]*\)"$/\1/p' /etc/snapper/configs/root 2>/dev
 if [[ -z $d ]]; then bad "freeing disk space" "nothing trims: deleted files keep their space (omacvm apply)"
 elif [[ $n == 5 && ! -e /var/lib/omacvm/update-snapshots ]]; then warn "freeing disk space" "$d; 5 update snapshots keep deleted system files (omacvm apply keeps fewer)"
 else ok "freeing disk space" "$d${n:+; $n update snapshots}"; fi
+# Omarchy's update stops under 10 GiB free on / (omarchy-update-requires-free-space,
+# the same in Omarchy 4.0 and 4.5): the same measure and limit here, said first.
+FREE_MIN=$((10 * 1024 * 1024 * 1024))
+avail=$(df --output=avail --block-size=1 / 2>/dev/null | tail -n 1 | tr -d ' ')
+if [[ $avail =~ ^[0-9]+$ ]]; then
+  gib=$(awk -v b="$avail" 'BEGIN { printf "%.1f", b / 1073741824 }')
+  if (( avail < FREE_MIN )); then
+    warn "free space" "$gib GiB free on /, Omarchy's update needs 10 GiB: delete files in your home you no longer need, or give the VM a larger disk (VM window, Disk › Change… with the VM shut down)" human
+  else ok "free space" "$gib GiB free on /"; fi
+fi
 # The desktop user's runtime folder (/run/user/UID), a tmpfs of 10 % of the
 # VM's memory: when it is full, Hyprland and apps that draw through shared
 # memory there die of SIGBUS (2026-10-19: OmacVM.app's hyprpicker up to 3.1.24
@@ -1122,6 +1297,7 @@ if [[ ${OMACVM_FEATURE_x86_apps:-off} == on ]]; then
   if [[ ${x86%% *} != ok ]]; then bad "x86 apps" "${x86#* }"
   elif ! /usr/local/share/omacvm/x86/guest/install.sh --test; then bad "x86 apps" "${x86#* }, but a test x86_64 program does not run"
   else ok "x86 apps" "${x86#* }"; fi
+elif [[ $x86 == "needed qemu-user's x86_64 rule is still held back"* ]]; then bad "x86 apps" "off, but ${x86#* }"
 elif [[ -n $x86 && ${x86%% *} != off && $x86 != *"not OmacVM's"* ]]; then bad "x86 apps" "off, but OmacVM's box64 is still installed: omacvm apply"
 else skip "x86 apps" "off (omacvm enable x86-apps: x86_64 programs through box64)"; fi
 FEATURE=""
@@ -1143,7 +1319,7 @@ elif [[ $TYPE == app ]] && grep -qs '^OMACVM_FULLPANEL=' /run/omacvm/host.env; t
   if user_active notchcast.service || pgrep -u "$U" -x notchcast >/dev/null || connected_to "$HOST" 47811; then
     bad "Omanotch" "notchcast runs on a start with full screen including notch: it would stream a second bar (omacvm apply brings the unit that stays off)"
   else ok "Omanotch" "not needed (full screen including notch): notchcast idle until the next start with the notch via Omanotch"; fi
-  st=$(as_user omarchy-shell notchbar state 2>/dev/null)
+  st=$(as_user omarchy-shell notchbar state 2>/dev/null | shell_json)
   fp=$(jq -r '.fullpanel // empty' <<<"$st" 2>/dev/null)
   bars=$(jq -r '[.bars[]? | select(.[1] == "fullpanel") | "\(.[0]) (\(.[3]) px)"] | join(", ")' <<<"$st" 2>/dev/null)
   case $fp in
@@ -1163,7 +1339,7 @@ elif systemctl --user -M "$U@" list-unit-files notchcast.service 2>/dev/null | g
   b=$(cat "$RUN/omacvm/builtin" 2>/dev/null || echo Virtual-1)
   mons=$(as_user hyprctl monitors all -j 2>/dev/null)
   at() { jq -r --arg n "$1" '.[] | select(.name == $n) | "\(.x),\(.y),\(.width)"' <<<"$mons" 2>/dev/null; }
-  st=$(as_user omarchy-shell notchbar state 2>/dev/null)
+  st=$(as_user omarchy-shell notchbar state 2>/dev/null | shell_json)
   parked=$(jq -r '.parked' <<<"$st" 2>/dev/null); pscreen=$(jq -r '.screen' <<<"$st" 2>/dev/null)
   if [[ -z $(at NOTCH) || -z $(at "$b") ]]; then skip "notch display" "no NOTCH or $b output now"
   elif ! spot=$(notch_spot "$mons" "$b" "$TYPE") || [[ -z $spot ]]; then
@@ -1181,6 +1357,11 @@ elif systemctl --user -M "$U@" list-unit-files notchcast.service 2>/dev/null | g
     # What Hyprland composites, whatever the bar says about itself.
     bad "notch display" "the strip shows the bar and a bar is also on $b: two bars on the MacBook (omarchy-restart-shell)"
   else ok "notch display" "$b$([[ $spot == above ]] && echo ", NOTCH right above it")$([[ $parked == true ]] && echo ", its bar in the strip")"; fi
+  # Omarchy 4.5 (#760): the strip's workspaces come from the bar copy's own
+  # widget; one there with the patch that does not load (notch_ws_unloaded).
+  if notch_ws_unloaded "$st" "$H/.config/omarchy/plugins/$U.bar/widgets/Workspaces.qml"; then
+    warn "NOTCH workspaces" "the bar copy's widgets/Workspaces.qml does not load (the shell's log has 'omanotch: NOTCH workspaces'): the strip shows the NOTCH output's own workspaces. Delete ~/.config/omarchy/plugins/\$USER.bar, then repair Omanotch to make it again"
+  fi
 else skip "Omanotch" "not installed (omacvm enable omanotch, on a MacBook with a notch)"; fi
 # Its copies of Omarchy's bar and background follow Omarchy's updates
 # (src/omanotch/guest/copies.py; WARN: kept as they are, and why).
